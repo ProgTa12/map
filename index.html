@@ -87,5 +87,65 @@ navigator.geolocation.getCurrentPosition(
   { enableHighAccuracy: true }
 );
 </script>
+
+  <script>
+  let currentMarker = null;
+  let currentHeading = 0;
+
+  // 지도 초기화
+  const map = L.map('map').setView([36.5, 127.8], 7);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+  }).addTo(map);
+
+  // 아이콘 이미지
+  const arrowIcon = L.icon({
+    iconUrl: "https://cdn-icons-png.flaticon.com/512/60/60995.png", // 화살표 아이콘
+    iconSize: [40, 40],
+    iconAnchor: [20, 20]
+  });
+
+  // 위치 추적
+  if (navigator.geolocation) {
+    navigator.geolocation.watchPosition(
+      (pos) => {
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        // 기존 마커 제거
+        if (currentMarker) {
+          map.removeLayer(currentMarker);
+        }
+
+        // 새 마커 추가 (회전 각도는 CSS transform으로 적용)
+        currentMarker = L.marker([lat, lon], { icon: arrowIcon })
+          .addTo(map)
+          .bindPopup(`📍 현재 위치<br>${lat.toFixed(5)}, ${lon.toFixed(5)}<br>방향: ${currentHeading.toFixed(0)}°`)
+          .openPopup();
+
+        // 지도 중심 이동
+        map.setView([lat, lon], 16);
+
+        // 아이콘 회전 적용
+        const iconEl = currentMarker._icon;
+        if (iconEl) {
+          iconEl.style.transform += ` rotate(${currentHeading}deg)`;
+        }
+      },
+      (err) => {
+        alert("위치 추적 실패: " + err.message);
+      },
+      { enableHighAccuracy: true }
+    );
+  }
+
+  // 나침반 센서로 방향 추적
+  window.addEventListener("deviceorientationabsolute", (event) => {
+    if (event.alpha !== null) {
+      currentHeading = event.alpha; // 0~360 (북쪽 기준)
+    }
+  }, true);
+</script>
+
 </body>
 </html>
