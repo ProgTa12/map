@@ -75,5 +75,17 @@
     // 3초마다 위치 업데이트
     setInterval(updateLocation, 3000);
   </script>
+
+  <script>
+navigator.geolocation.getCurrentPosition(
+  (pos) => {
+    alert("위치 받아옴: " + pos.coords.latitude + ", " + pos.coords.longitude);
+  },
+  (err) => {
+    alert("위치 가져오기 실패: " + err.message);
+  },
+  { enableHighAccuracy: true }
+);
+</script>
 </body>
 </html>
