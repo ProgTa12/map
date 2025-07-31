@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>내 휴대폰 위치 연동 지도</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+
+  <style>
+    #map {
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script>
+    // 지도 초기화 (처음에는 한국 대략 중심으로 표시)
+    const map = L.map('map').setView([36.5, 127.8], 7);
+
+    // 기본 타일 추가
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 현재 위치 마커 변수
+    let currentMarker = null;
+
+    // 현재 위치 갱신 함수
+    function updateLocation() {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+
+            // 이전 마커 제거
+            if (currentMarker) {
+              map.removeLayer(currentMarker);
+            }
+
+            // 현재 위치 마커 생성
+            currentMarker = L.marker([lat, lon], {
+              icon: L.icon({
+                iconUrl: "https://cdn-icons-png.flaticon.com/512/854/854878.png",
+                iconSize: [32, 32]
+              })
+            }).addTo(map)
+              .bindPopup(`📍 현재 위치<br>${lat.toFixed(5)}, ${lon.toFixed(5)}`)
+              .openPopup();
+
+            // 지도 중심을 현재 위치로 이동
+            map.setView([lat, lon], 16);
+          },
+          (err) => {
+            console.warn("위치 정보를 가져올 수 없습니다:", err.message);
+          },
+          { enableHighAccuracy: true }
+        );
+      } else {
+        alert("이 기기는 위치 정보를 지원하지 않습니다.");
+      }
+    }
+
+    // 최초 실행
+    updateLocation();
+
+    // 3초마다 위치 업데이트
+    setInterval(updateLocation, 3000);
+  </script>
+</body>
+</html>
