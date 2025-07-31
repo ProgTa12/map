@@ -2,17 +2,12 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>내 휴대폰 위치 연동 지도</title>
+  <title>실시간 위치 및 방향 공유 지도</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  
   <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-
   <style>
-    #map {
-      width: 100vw;
-      height: 100vh;
-    }
+    #map { width: 100vw; height: 100vh; }
   </style>
 </head>
 <body>
@@ -21,130 +16,133 @@
   <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <script>
-    // 지도 초기화 (처음에는 한국 대략 중심으로 표시)
-    const map = L.map('map').setView([36.5, 127.8], 7);
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+    import { firebaseConfig } from "./config.js"; // config.js는 .gitignore 처리됨
 
-    // 기본 타일 추가
+    // Firebase 초기화
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    // 지도 초기화
+    const map = L.map('map').setView([36.5, 127.8], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 현재 위치 마커 변수
-    let currentMarker = null;
+    // 사용자별 마커와 방향 화살표 저장소
+    const userMarkers = {};
+    const userArrows = {};
+    const userLabels = {};
 
-    // 현재 위치 갱신 함수
-    function updateLocation() {
+    let myHeading = 0; // 내 기기 방향
+
+    // UID별 위치 업로드
+    function uploadLocation(userId, lat, lon, heading) {
+      set(ref(db, "locations/" + userId), {
+        latitude: lat,
+        longitude: lon,
+        heading: heading,
+        timestamp: Date.now()
+      });
+    }
+
+    // 내 위치 갱신
+    function updateLocation(userId) {
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-
-            // 이전 마커 제거
-            if (currentMarker) {
-              map.removeLayer(currentMarker);
-            }
-
-            // 현재 위치 마커 생성
-            currentMarker = L.marker([lat, lon], {
-              icon: L.icon({
-                iconUrl: "https://cdn-icons-png.flaticon.com/512/854/854878.png",
-                iconSize: [32, 32]
-              })
-            }).addTo(map)
-              .bindPopup(`📍 현재 위치<br>${lat.toFixed(5)}, ${lon.toFixed(5)}`)
-              .openPopup();
-
-            // 지도 중심을 현재 위치로 이동
-            map.setView([lat, lon], 16);
+            uploadLocation(userId, lat, lon, myHeading);
           },
-          (err) => {
-            console.warn("위치 정보를 가져올 수 없습니다:", err.message);
-          },
+          (err) => console.warn("위치 가져오기 실패:", err.message),
           { enableHighAccuracy: true }
         );
-      } else {
-        alert("이 기기는 위치 정보를 지원하지 않습니다.");
       }
     }
 
-    // 최초 실행
-    updateLocation();
-
-    // 3초마다 위치 업데이트
-    setInterval(updateLocation, 1000);
-  </script>
-
-  <script>
-navigator.geolocation.getCurrentPosition(
-  (pos) => {
-    alert("위치 받아옴: " + pos.coords.latitude + ", " + pos.coords.longitude);
-  },
-  (err) => {
-    alert("위치 가져오기 실패: " + err.message);
-  },
-  { enableHighAccuracy: true }
-);
-</script>
-
-  <script>
-  let currentMarker = null;
-  let currentHeading = 0;
-
-  // 지도 초기화
-  const map = L.map('map').setView([36.5, 127.8], 7);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap contributors'
-  }).addTo(map);
-
-  // 아이콘 이미지
-  const arrowIcon = L.icon({
-    iconUrl: "https://cdn-icons-png.flaticon.com/512/60/60995.png", // 화살표 아이콘
-    iconSize: [40, 40],
-    iconAnchor: [20, 20]
-  });
-
-  // 위치 추적
-  if (navigator.geolocation) {
-    navigator.geolocation.watchPosition(
-      (pos) => {
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-
-        // 기존 마커 제거
-        if (currentMarker) {
-          map.removeLayer(currentMarker);
+    // 기기 방향 감지
+    if (window.DeviceOrientationEvent) {
+      window.addEventListener("deviceorientationabsolute", (event) => {
+        if (event.alpha !== null) {
+          myHeading = 360 - event.alpha; // 북쪽=0 기준 시계방향
         }
+      }, true);
 
-        // 새 마커 추가 (회전 각도는 CSS transform으로 적용)
-        currentMarker = L.marker([lat, lon], { icon: arrowIcon })
-          .addTo(map)
-          .bindPopup(`📍 현재 위치<br>${lat.toFixed(5)}, ${lon.toFixed(5)}<br>방향: ${currentHeading.toFixed(0)}°`)
-          .openPopup();
-
-        // 지도 중심 이동
-        map.setView([lat, lon], 16);
-
-        // 아이콘 회전 적용
-        const iconEl = currentMarker._icon;
-        if (iconEl) {
-          iconEl.style.transform += ` rotate(${currentHeading}deg)`;
-        }
-      },
-      (err) => {
-        alert("위치 추적 실패: " + err.message);
-      },
-      { enableHighAccuracy: true }
-    );
-  }
-
-  // 나침반 센서로 방향 추적
-  window.addEventListener("deviceorientationabsolute", (event) => {
-    if (event.alpha !== null) {
-      currentHeading = event.alpha; // 0~360 (북쪽 기준)
+      // iOS용 권한 요청
+      if (typeof DeviceOrientationEvent.requestPermission === "function") {
+        DeviceOrientationEvent.requestPermission().catch(console.error);
+      }
     }
-  }, true);
 
+    // UID별 사용자 표시
+    function showUser(uid, lat, lon, heading) {
+      // 마커 생성/업데이트
+      if (userMarkers[uid]) {
+        userMarkers[uid].setLatLng([lat, lon]);
+        if (userArrows[uid]) map.removeLayer(userArrows[uid]);
+        if (userLabels[uid]) map.removeLayer(userLabels[uid]);
+      } else {
+        userMarkers[uid] = L.marker([lat, lon]).addTo(map)
+          .bindPopup(`👤 ${uid}`);
+      }
+
+      // 방향 화살표
+      const arrowLength = 0.0007; // 화살표 길이
+      const rad = heading * (Math.PI / 180);
+      const endLat = lat + arrowLength * Math.cos(rad);
+      const endLon = lon + arrowLength * Math.sin(rad);
+
+      userArrows[uid] = L.polyline([[lat, lon], [endLat, endLon]], {
+        color: "red",
+        weight: 3,
+        opacity: 0.8
+      }).addTo(map);
+
+      // 방향 텍스트 (북, 동, 남, 서)
+      let directionText = "북";
+      if (heading >= 45 && heading < 135) directionText = "동";
+      else if (heading >= 135 && heading < 225) directionText = "남";
+      else if (heading >= 225 && heading < 315) directionText = "서";
+
+      userLabels[uid] = L.marker([endLat, endLon], {
+        icon: L.divIcon({
+          className: "direction-label",
+          html: `<b>${directionText}</b>`,
+          iconSize: [30, 20]
+        })
+      }).addTo(map);
+    }
+
+    // Firebase 로그인 및 위치 공유 시작
+    signInAnonymously(auth).then(() => {
+      console.log("익명 로그인 성공");
+    }).catch(console.error);
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userId = user.uid;
+
+        // 내 위치 주기적 업로드
+        updateLocation(userId);
+        setInterval(() => updateLocation(userId), 3000);
+
+        // 모든 사용자 위치 구독
+        const locationsRef = ref(db, "locations");
+        onValue(locationsRef, (snapshot) => {
+          const data = snapshot.val();
+          if (!data) return;
+          for (const uid in data) {
+            const { latitude, longitude, heading } = data[uid];
+            showUser(uid, latitude, longitude, heading || 0);
+          }
+        });
+      }
+    });
+  </script>
 </body>
 </html>
