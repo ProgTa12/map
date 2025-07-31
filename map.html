@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>실시간 위치 공유 지도</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    #map {
+      width: 100vw;
+      height: 100vh;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <!-- Firebase SDK -->
+  <script type="module">
+    // Firebase SDK 불러오기
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+
+    // ✅ Firebase 설정 (본인 프로젝트 정보로 교체)
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "YOUR_PROJECT.firebaseapp.com",
+      databaseURL: "https://YOUR_PROJECT.firebaseio.com",
+      projectId: "YOUR_PROJECT_ID",
+      storageBucket: "YOUR_PROJECT.appspot.com",
+      messagingSenderId: "YOUR_SENDER_ID",
+      appId: "YOUR_APP_ID"
+    };
+
+    // Firebase 초기화
+    const app = initializeApp(firebaseConfig);
+    const db = getDatabase(app);
+    const auth = getAuth(app);
+
+    // Leaflet 지도 초기화
+    const map = L.map('map').setView([36.5, 127.8], 7);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    // 사용자별 마커 저장용
+    const userMarkers = {};
+
+    // 위치 업데이트 함수
+    function updateLocation(userId) {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition((pos) => {
+          const lat = pos.coords.latitude;
+          const lon = pos.coords.longitude;
+
+          set(ref(db, "locations/" + userId), {
+            latitude: lat,
+            longitude: lon,
+            timestamp: Date.now()
+          });
+        }, (err) => {
+          console.warn("위치 가져오기 실패:", err.message);
+        }, { enableHighAccuracy: true });
+      } else {
+        alert("이 기기는 위치 정보를 지원하지 않습니다.");
+      }
+    }
+
+    // 익명 로그인 후 실행
+    signInAnonymously(auth).then(() => {
+      console.log("익명 로그인 성공");
+    }).catch((error) => {
+      console.error("로그인 실패:", error);
+    });
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const userId = user.uid;
+        console.log("내 UID:", userId);
+
+        // 내 위치 주기적으로 업로드
+        updateLocation(userId);
+        setInterval(() => updateLocation(userId), 3000);
+
+        // 모든 사용자 위치 실시간으로 불러오기
+        const locationsRef = ref(db, "locations");
+        onValue(locationsRef, (snapshot) => {
+          const data = snapshot.val();
+          if (!data) return;
+
+          for (const uid in data) {
+            const { latitude, longitude } = data[uid];
+            if (userMarkers[uid]) {
+              // 기존 마커 위치 이동
+              userMarkers[uid].setLatLng([latitude, longitude]);
+            } else {
+              // 새 마커 추가
+              userMarkers[uid] = L.marker([latitude, longitude]).addTo(map)
+                .bindPopup(`👤 ${uid}<br>${latitude.toFixed(5)}, ${longitude.toFixed(5)}`);
+            }
+          }
+        });
+      }
+    });
+  </script>
+</body>
+</html>
