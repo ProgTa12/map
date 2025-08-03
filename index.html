@@ -58,7 +58,7 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 사용자별 마커 저장용 객체
+    // 사용자별 마커 저장
     const userMarkers = {};
     let myUid = null;
     let myHeading = 0;
@@ -81,8 +81,9 @@
       shadowSize: [41, 41]
     });
 
-    // 위치 업로드 함수
+    // 위치 업로드
     function uploadLocation(userId, lat, lon, heading) {
+      console.log(⬆️ 위치 업로드: UID=${userId}, 위도=${lat}, 경도=${lon}, heading=${heading});
       return set(ref(db, "locations/" + userId), {
         latitude: lat,
         longitude: lon,
@@ -93,115 +94,137 @@
 
     // 내 위치 추적 및 업로드
     function trackLocation(userId) {
-      if (!navigator.geolocation) {
-        alert("이 브라우저에서는 위치 추적이 지원되지 않습니다.");
+      if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(
+          (pos) => {
+            const lat = pos.coords.latitude;
+            const lon = pos.coords.longitude;
+            console.log(📍 내 위치 갱신: ${lat}, ${lon});
+            uploadLocation(userId, lat, lon, myHeading);
+            showUser(userId, lat, lon, myHeading);
+          },
+          (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
+          { enableHighAccuracy: true }
+        );
+      } else {
+        console.error("❌ 브라우저에서 위치 정보를 지원하지 않음");
+      }
+    }
+
+    // 방향 감지
+    if (window.DeviceOrientationEvent) {
+      const handleOrientation = (event) => {
+        if (event.alpha !== null) {
+          myHeading = 360 - event.alpha;
+        }
+      };
+      if (typeof DeviceOrientationEvent.requestPermission === "function") {
+        document.body.addEventListener("click", () => {
+          DeviceOrientationEvent.requestPermission()
+            .then((res) => {
+              if (res === "granted") {
+                window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+              }
+            })
+            .catch(console.error);
+        });
+      } else {
+        window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+      }
+    }
+
+    // 사용자 마커 표시
+    function showUser(uid, lat, lon, heading) {
+      console.log(➡️ showUser 실행: UID=${uid}, 위도=${lat}, 경도=${lon}, heading=${heading});
+      const latNum = Number(lat);
+      const lonNum = Number(lon);
+      const headingNum = Number(heading) || 0;
+
+      if (isNaN(latNum) || isNaN(lonNum)) {
+        console.error(❌ 좌표 NaN (${uid}):, lat, lon);
         return;
       }
-      navigator.geolocation.watchPosition(
-        (pos) => {
-          const lat = pos.coords.latitude;
-          const lon = pos.coords.longitude;
-          uploadLocation(userId, lat, lon, myHeading);
-        },
-        (err) => { console.error("위치 추적 에러:", err); },
-        { enableHighAccuracy: true, maximumAge: 1000, timeout: 10000 }
-      );
+
+      const icon = uid === myUid ? redIcon : blueIcon;
+      const popupMsg = uid === myUid ? '나(Myself)' : 팀원 (${uid.slice(0,6)});
+
+      if (!userMarkers[uid]) {
+        userMarkers[uid] = L.marker([latNum, lonNum], { icon })
+          .addTo(map)
+          .bindPopup(👤 ${popupMsg});
+        console.log(✅ 마커 생성: ${popupMsg});
+      } else {
+        userMarkers[uid].setLatLng([latNum, lonNum]);
+        console.log(🔄 마커 갱신: ${popupMsg});
+      }
+
+      if (uid === myUid) {
+        map.setView([latNum, lonNum], 15);
+      }
     }
 
-    // 나를 포함한 모든 위치정보 실시간 구독 및 마커 반영
-    function subscribeAllLocations() {
-      onValue(ref(db, 'locations'), (snapshot) => {
-        const locations = snapshot.val() || {};
-        // 마커 빠짐없이 동기화
-        // 1. 있는 사용자 마커만 남기기(없는 사용자 마커 제거)
-        Object.keys(userMarkers).forEach(uid => {
-          if (!locations[uid]) {
-            map.removeLayer(userMarkers[uid]);
-            delete userMarkers[uid];
-          }
-        });
-        // 2. 각 사용자별로 마커 생성 또는 위치 갱신
-        Object.entries(locations).forEach(([uid, loc]) => {
-          if (!loc.latitude || !loc.longitude) return;
-          const icon = (uid === myUid) ? redIcon : blueIcon;
-          const name = (uid === myUid) ? "나" : `사용자:${uid.slice(0, 8)}`;
-          if (userMarkers[uid]) {
-            userMarkers[uid].setLatLng([loc.latitude, loc.longitude]);
-          } else {
-            userMarkers[uid] = L.marker([loc.latitude, loc.longitude], { icon }).addTo(map);
-            userMarkers[uid].bindPopup(name);
-          }
-        });
+    // 모든 사용자 위치 구독
+    function listenAllUsers() {
+      onValue(ref(db, "locations"), snapshot => {
+        const locations = snapshot.val();
+        console.log("📡 DB 데이터 수신:", locations);
+        if (!locations) return;
+        for (const uid in locations) {
+          const user = locations[uid];
+          showUser(uid, user.latitude, user.longitude, user.heading);
+        }
       });
     }
 
-    //-------------------------------
-    // 로그인 처리(본인인증 or 익명)
-    //-------------------------------
-    // Recaptcha
-    window.recaptchaVerifier = new RecaptchaVerifier(
-      'recaptcha-container', { 'size': 'invisible' }, auth
-    );
-
+    // 로그인 UI 처리
     let confirmationResult = null;
+    const recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+      size: 'normal',
+      callback: () => {}
+    });
 
-    document.getElementById("phone-login-form").onsubmit = async function(e) {
+    document.getElementById('phone-login-form').addEventListener('submit', async function(e) {
       e.preventDefault();
-      const phoneNumber = document.getElementById("phone-number").value;
+      const phoneNumber = document.getElementById('phone-number').value;
       try {
-        confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, window.recaptchaVerifier);
-        alert("인증번호가 전송되었습니다.");
-        document.getElementById("phone-login-form").style.display = "none";
-        document.getElementById("code-login-form").style.display = "block";
-      } catch (err) {
-        alert("인증번호 전송 실패: " + err.message);
-      }
-    };
-
-    document.getElementById("code-login-form").onsubmit = async function(e) {
-      e.preventDefault();
-      const code = document.getElementById("otp-code").value;
-      try {
-        await confirmationResult.confirm(code);
-        // 성공 시 onAuthStateChanged 이벤트로 넘어감
-      } catch (err) {
-        alert("인증 실패: " + err.message);
-      }
-    };
-
-    document.getElementById("anonymous-login").onclick = function() {
-      signInAnonymously(auth).catch((err) => {
-        alert("익명 로그인 실패: " + err.message);
-      });
-    };
-
-    //-------------------------------
-    // 인증 상태에 따라 myUid 세팅, 내 위치 추적+전체 구독
-    //-------------------------------
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        myUid = user.uid;
-        document.getElementById("login-section").style.display = "none";
-        trackLocation(myUid);
-        subscribeAllLocations();
+        confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+        document.getElementById('code-login-form').style.display = '';
+        document.getElementById('phone-login-form').style.display = 'none';
+        alert('인증번호(OTP)를 입력하세요!');
+      } catch (error) {
+        alert("전화번호 인증 요청 실패: " + error.message);
+        recaptchaVerifier.clear();
       }
     });
 
-    // (선택) 장치 방향(컴퍼스) 정보 추적
-    if ('ondeviceorientationabsolute' in window) {
-      window.addEventListener('deviceorientationabsolute', (event) => {
-        if (event.absolute && event.alpha !== null) {
-          myHeading = event.alpha;
-        }
-      });
-    } else if ('ondeviceorientation' in window) {
-      window.addEventListener('deviceorientation', (event) => {
-        if (event.alpha !== null) {
-          myHeading = event.alpha;
-        }
-      });
-    }
+    document.getElementById('code-login-form').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const code = document.getElementById('otp-code').value;
+      try {
+        await confirmationResult.confirm(code);
+        document.getElementById('login-section').style.display = 'none';
+      } catch (error) {
+        alert("인증 실패: " + error.message);
+      }
+    });
 
+    document.getElementById('anonymous-login').addEventListener('click', () => {
+      signInAnonymously(auth).catch((err) => {
+        alert("익명 로그인 실패: " + err.message);
+      });
+    });
+
+    onAuthStateChanged(auth, (user) => {
+      if (user) {
+        document.getElementById('login-section').style.display = 'none';
+        myUid = user.uid;
+        console.log("👤 로그인 성공, UID:", myUid);
+        trackLocation(myUid);
+        listenAllUsers();
+      } else {
+        document.getElementById('login-section').style.display = '';
+      }
+    });
   </script>
 </body>
 </html>
