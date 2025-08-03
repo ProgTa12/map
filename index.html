@@ -33,7 +33,7 @@
       measurementId: "G-XLKW5QD56K"
     };
 
-    // Firebase 초기화 (지역 DB 지정)
+    // Firebase 초기화
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
     const auth = getAuth(app);
@@ -49,7 +49,8 @@
     const userArrows = {};
     const userLabels = {};
 
-    let myHeading = 0; // 내 기기 방향
+    let myHeading = 0; 
+    let myUid = null; // 내 UID 저장
 
     // UID별 위치 업로드
     function uploadLocation(userId, lat, lon, heading) {
@@ -83,7 +84,7 @@
     if (window.DeviceOrientationEvent) {
       window.addEventListener("deviceorientationabsolute", (event) => {
         if (event.alpha !== null) {
-          myHeading = 360 - event.alpha; // 북쪽=0 기준 시계방향
+          myHeading = 360 - event.alpha; 
         }
       }, true);
 
@@ -104,8 +105,8 @@
 
       console.log(`🗺️ 사용자 표시: ${uid}`, latNum, lonNum, heading);
 
-      // 지도 중심 이동 (처음 추가될 때)
-      if (!userMarkers[uid]) {
+      // 내 위치일 경우 지도 중심 이동
+      if (uid === myUid) {
         map.setView([latNum, lonNum], 15);
       }
 
@@ -156,12 +157,12 @@
 
     onAuthStateChanged(auth, (user) => {
       if (user) {
-        const userId = user.uid;
-        console.log("👤 로그인된 사용자 UID:", userId);
+        myUid = user.uid;
+        console.log("👤 로그인된 사용자 UID:", myUid);
 
         // 내 위치 주기적 업로드
-        updateLocation(userId);
-        setInterval(() => updateLocation(userId), 3000);
+        updateLocation(myUid);
+        setInterval(() => updateLocation(myUid), 3000);
 
         // 모든 사용자 위치 구독
         const locationsRef = ref(db, "locations");
