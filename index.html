@@ -40,6 +40,24 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
+    // 마커 아이콘
+    const redIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+    const blueIcon = new L.Icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
+      shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+
     // 사용자별 마커 저장
     const userMarkers = {};
     let myHeading = 0; 
@@ -53,7 +71,7 @@
         heading: heading,
         timestamp: Date.now()
       }).then(() => {
-        console.log(`✅ 내 위치 업로드 완료: ${lat}, ${lon}, heading=${heading}`);
+        console.log(`✅ 위치 업로드 완료: ${userId}, lat:${lat}, lon:${lon}, heading=${heading}`);
       }).catch(err => console.error("❌ DB 업로드 실패:", err));
     }
 
@@ -64,8 +82,8 @@
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
+            // 내 위치는 업로드만, 마커는 onValue에서 전부 가져와서 처리함
             console.log(`📌 내 위치 갱신: ${lat}, ${lon}`);
-            showUser(userId, lat, lon, myHeading);
             uploadLocation(userId, lat, lon, myHeading);
           },
           (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
@@ -76,7 +94,7 @@
       }
     }
 
-    // 기기 방향 감지
+    // 방향 감지
     if (window.DeviceOrientationEvent) {
       const handleOrientation = (event) => {
         if (event.alpha !== null) {
@@ -98,73 +116,59 @@
       }
     }
 
-    // 지도에 사용자 마커 표시 및 갱신
-    function showUser(uid, lat, lon, heading) {
-      const latNum = parseFloat(lat);
-      const lonNum = parseFloat(lon);
-      if (isNaN(latNum) || isNaN(lonNum)) return;
+    // 모든 위치 불러와서 지도에 표시
+    function subscribeAllLocations() {
+      const locationsRef = ref(db, "locations");
+      onValue(locationsRef, (snapshot) => {
+        const datas = snapshot.val() || {};
+        console.log("[전체 사용자 목록]", Object.keys(datas));
 
-      const color = (uid === myUid) ? "red" : "blue";
-
-      const arrowIcon = L.divIcon({
-        className: "custom-arrow",
-        html: `
-          <div style="text-align:center;">
-            <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
-            <div style="width:12px; height:12px; background:${color}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
-          </div>
-        `,
-        iconSize: [30, 40],
-        iconAnchor: [15, 20]
-      });
-
-      if (!userMarkers[uid]) {
-        userMarkers[uid] = L.marker([latNum, lonNum], { icon: arrowIcon })
-          .addTo(map)
-          .bindPopup(`👤 ${uid === myUid ? '나(Myself)' : uid}`);
-        console.log(`➕ 새 사용자 추가됨: ${uid}, 위치=${latNum},${lonNum}`);
-      } else {
-        userMarkers[uid].setLatLng([latNum, lonNum]);
-        userMarkers[uid].setIcon(arrowIcon);
-        if (uid !== myUid) {
-          console.log(`📍 팀원 위치 갱신: UID=${uid}, 위치=${latNum},${lonNum}, heading=${heading}`);
+        // 사라진 사용자 처리
+        for (const uid in userMarkers) {
+          if (!(uid in datas)) {
+            map.removeLayer(userMarkers[uid]);
+            delete userMarkers[uid];
+            console.log(`❌ 마커 삭제: ${uid}`);
+          }
         }
-      }
-    }
 
-    // 모든 사용자 위치 실시간 반영
-    function listenAllUsers() {
-      onValue(ref(db, "locations"), snapshot => {
-        const locations = snapshot.val();
-        if (!locations) {
-          console.log("⚠️ 위치 데이터 없음");
-          return;
-        }
-        console.log("🌍 전체 사용자 위치 갱신:", locations);
-        for (const uid in locations) {
-          console.log("📡 수신된 UID:", uid, "데이터:", locations[uid]);
-          const user = locations[uid];
-          showUser(uid, user.latitude, user.longitude, user.heading || 0);
+        // 새로 들어오거나 갱신된 사용자 위치 반영
+        for (const uid in datas) {
+          const { latitude, longitude } = datas[uid];
+          const latNum = parseFloat(latitude);
+          const lonNum = parseFloat(longitude);
+          if (isNaN(latNum) || isNaN(lonNum)) continue;
+
+          const icon = (uid === myUid) ? redIcon : blueIcon;
+
+          if (!userMarkers[uid]) {
+            userMarkers[uid] = L.marker([latNum, lonNum], { icon }).addTo(map)
+              .bindPopup((uid === myUid ? "나" : uid));
+            console.log(`🧑‍💻 사용자 추가됨: ${uid} (${latNum}, ${lonNum})`);
+          } else {
+            userMarkers[uid].setLatLng([latNum, lonNum]);
+            console.log(`🔄 사용자 위치갱신: ${uid} (${latNum}, ${lonNum})`);
+          }
         }
       });
     }
 
-
-    // 익명 로그인 후 내 위치 추적 시작
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        myUid = user.uid;
-        console.log(`✅ 로그인 성공, 내 UID: ${myUid}`);
-        trackLocation(myUid);
-        listenAllUsers();
-      }
-    });
-
-    // 인증 시작
-    signInAnonymously(auth).catch((err) => {
-      console.error("❌ 로그인 실패:", err);
-    });
+    // 로그인 및 구독 시작
+    signInAnonymously(auth)
+      .then(() => {
+        onAuthStateChanged(auth, (user) => {
+          if (user) {
+            myUid = user.uid;
+            console.log("내 UID:", myUid);
+            trackLocation(myUid);
+            subscribeAllLocations(); // '전체' 위치 구독 꼭 실행
+          }
+        });
+      })
+      .catch(e => {
+        alert("Firebase 인증 실패: " + e.message);
+        console.error("Firebase 인증 실패:", e);
+      });
   </script>
 </body>
 </html>
-
