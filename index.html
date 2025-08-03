@@ -22,7 +22,7 @@
     import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
 
-    // Firebase 설정 (config.js 내용을 직접 포함)
+    // Firebase 설정
     const firebaseConfig = {
       apiKey: "AIzaSyBvLnMA7jF-1AoDQlgLdEDKFDyWk4N29mY",
       authDomain: "gps-mapping-397bc.firebaseapp.com",
@@ -33,7 +33,7 @@
       measurementId: "G-XLKW5QD56K"
     };
 
-    // Firebase 초기화 + 정확한 DB 지역 URL 지정
+    // Firebase 초기화 (지역 DB 지정)
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
     const auth = getAuth(app);
@@ -68,14 +68,14 @@
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            console.log("위치 가져오기 성공:", lat, lon); // 로그 추가
+            console.log("✅ 위치 가져오기 성공:", lat, lon);
             uploadLocation(userId, lat, lon, myHeading);
           },
-          (err) => console.error("위치 가져오기 실패:", err),
+          (err) => console.error("❌ 위치 가져오기 실패:", err.code, err.message),
           { enableHighAccuracy: true }
         );
       } else {
-        console.error("이 브라우저는 위치 정보를 지원하지 않습니다.");
+        console.error("❌ 이 브라우저는 위치 정보를 지원하지 않습니다.");
       }
     }
 
@@ -94,23 +94,41 @@
 
     // UID별 사용자 표시
     function showUser(uid, lat, lon, heading) {
-      // 기존 마커/화살표/라벨 제거
+      const latNum = parseFloat(lat);
+      const lonNum = parseFloat(lon);
+
+      if (isNaN(latNum) || isNaN(lonNum)) {
+        console.error("❌ 잘못된 좌표 데이터:", lat, lon);
+        return;
+      }
+
+      console.log(`🗺️ 사용자 표시: ${uid}`, latNum, lonNum, heading);
+
+      // 지도 중심 이동 (처음 추가될 때)
+      if (!userMarkers[uid]) {
+        map.setView([latNum, lonNum], 15);
+      }
+
       if (userMarkers[uid]) {
-        userMarkers[uid].setLatLng([lat, lon]);
-        if (userArrows[uid]) map.removeLayer(userArrows[uid]);
-        if (userLabels[uid]) map.removeLayer(userLabels[uid]);
+        userMarkers[uid].setLatLng([latNum, lonNum]);
+        try {
+          if (userArrows[uid]) map.removeLayer(userArrows[uid]);
+          if (userLabels[uid]) map.removeLayer(userLabels[uid]);
+        } catch (e) {
+          console.error("레이어 제거 중 에러:", e);
+        }
       } else {
-        userMarkers[uid] = L.marker([lat, lon]).addTo(map)
+        userMarkers[uid] = L.marker([latNum, lonNum]).addTo(map)
           .bindPopup(`👤 ${uid}`);
       }
 
       // 방향 화살표
       const arrowLength = 0.0007;
       const rad = heading * (Math.PI / 180);
-      const endLat = lat + arrowLength * Math.cos(rad);
-      const endLon = lon + arrowLength * Math.sin(rad);
+      const endLat = latNum + arrowLength * Math.cos(rad);
+      const endLon = lonNum + arrowLength * Math.sin(rad);
 
-      userArrows[uid] = L.polyline([[lat, lon], [endLat, endLon]], {
+      userArrows[uid] = L.polyline([[latNum, lonNum], [endLat, endLon]], {
         color: "red",
         weight: 3,
         opacity: 0.8
@@ -133,13 +151,13 @@
 
     // Firebase 로그인 및 위치 공유 시작
     signInAnonymously(auth).then(() => {
-      console.log("익명 로그인 성공");
+      console.log("✅ 익명 로그인 성공");
     }).catch(console.error);
 
     onAuthStateChanged(auth, (user) => {
       if (user) {
         const userId = user.uid;
-        console.log("로그인된 사용자 UID:", userId);
+        console.log("👤 로그인된 사용자 UID:", userId);
 
         // 내 위치 주기적 업로드
         updateLocation(userId);
@@ -150,9 +168,10 @@
         onValue(locationsRef, (snapshot) => {
           const data = snapshot.val();
           if (!data) {
-            console.log("현재 DB에 위치 데이터 없음");
+            console.log("⚠️ 현재 DB에 위치 데이터 없음");
             return;
           }
+          console.log("📡 DB에서 받은 데이터:", data);
           for (const uid in data) {
             const { latitude, longitude, heading } = data[uid];
             showUser(uid, latitude, longitude, heading || 0);
