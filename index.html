@@ -2,32 +2,47 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치 및 방향 공유 지도</title>
+  <title>실시간 위치 공유 (전화번호/게스트 로그인 선택)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
-    #login-section { position: absolute; z-index: 1000; background: white; padding: 16px; border-radius:6px; border:1px solid #ddd; top:10px; left:10px; }
-    #login-section input { margin-bottom:5px;}
-    #login-section label { display:block;}
+    #login-select, #phone-section, #otp-section {
+      position: absolute; z-index: 1000; background: white;
+      padding: 16px; border-radius: 6px; border: 1px solid #ddd;
+      top: 10px; left: 10px; min-width:240px; transition:0.3s;
+    }
+    #login-select button { width:100%; margin-bottom:8px; }
+    #phone-section, #otp-section { display:none;}
+    #msg {color:red; margin-top:4px;}
   </style>
 </head>
 <body>
-  <div id="login-section">
+  <!-- 로그인 선택창 -->
+  <div id="login-select">
+    <button id="btn-phone">전화번호로 로그인</button>
+    <button id="btn-guest">게스트(익명) 로그인</button>
+  </div>
+  <!-- 전화번호 입력 -->
+  <div id="phone-section">
     <form id="phone-login-form">
-      <label>전화번호(예:+821012345678)<br>
+      <label>전화번호 (예: +821012345678)<br>
         <input id="phone-number" type="text" placeholder="+8210xxxxxxx" required>
       </label>
       <div id="recaptcha-container"></div>
-      <button type="submit">인증번호 받기</button>
+      <button type="submit" style="margin-top:5px;">인증번호 받기</button>
+      <div id="msg"></div>
     </form>
-    <form id="code-login-form" style="display:none;">
-      <label>인증번호(OTP):
+  </div>
+  <!-- OTP 입력 -->
+  <div id="otp-section">
+    <form id="code-login-form">
+      <label>인증번호 (SMS로 수신한 6자리):
         <input id="otp-code" type="text" required>
       </label>
-      <button type="submit">인증</button>
+      <button type="submit" style="margin-top:5px;">인증</button>
+      <div id="msg-otp"></div>
     </form>
-    <button id="anonymous-login">익명 로그인</button>
   </div>
   <div id="map"></div>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -62,6 +77,7 @@
     const userMarkers = {};
     let myUid = null;
     let myHeading = 0;
+    let isTracking = false; // 위치 추적중 여부
 
     // 마커 아이콘
     const redIcon = new L.Icon({
@@ -81,33 +97,78 @@
       shadowSize: [41, 41]
     });
 
-    // 위치 업로드
+    // 지도에 사용자 마커 표시 및 갱신
+    function showUser(uid, lat, lon) {
+      const latNum = parseFloat(lat);
+      const lonNum = parseFloat(lon);
+      if (isNaN(latNum) || isNaN(lonNum)) return;
+
+      let icon = uid === myUid ? redIcon : blueIcon;
+      let popupMsg = uid === myUid ? '나(Myself)' : uid;
+
+      if (!userMarkers[uid]) {
+        userMarkers[uid] = L.marker([latNum, lonNum], {icon: icon})
+          .addTo(map)
+          .bindPopup(`👤 ${popupMsg}`);
+      } else {
+        userMarkers[uid].setLatLng([latNum, lonNum]);
+      }
+    }
+
+    // 모든 사용자 위치 실시간 반영(나 포함)
+    function listenAllUsers() {
+      onValue(ref(db, "locations"), snapshot => {
+        const locations = snapshot.val();
+        if (!locations) return;
+        for (const uid in locations) {
+          const user = locations[uid];
+          showUser(uid, user.latitude, user.longitude);
+        }
+      });
+    }
+
+    // 위치 업로드 (오류시 권한 안내)
     function uploadLocation(userId, lat, lon, heading) {
       return set(ref(db, "locations/" + userId), {
         latitude: lat,
         longitude: lon,
         heading: heading,
         timestamp: Date.now()
-      }).catch(err => console.error("DB 업로드 실패:", err));
+      }).catch(err => {
+        alert("위치 업로드 실패. 위치 권한을 확인하세요.\n" + err.message);
+      });
     }
 
     // 내 위치 추적 및 업로드 + 지도에 마커 즉시 표시
     function trackLocation(userId) {
+      if (isTracking) return;
+      isTracking = true; // 중복 추적 방지
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            // 1. DB 업로드
             uploadLocation(userId, lat, lon, myHeading);
-            // 2. 내 위치 지도에 즉시 표시
-            showUser(userId, lat, lon, myHeading);
+            showUser(userId, lat, lon);
           },
-          (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
+          (err) => {
+            isTracking = false;
+            let message = "❌ 위치 추적 실패: ";
+            if (err.code === 1) {
+              message += "브라우저 위치 권한이 거부됐습니다.\n크롬 주소창 자물쇠 또는 우측 상단 위치 아이콘(📍)을 클릭하여 권한을 허용해주세요.";
+            } else if (err.code === 2) {
+              message += "위치 정보를 사용할 수 없습니다. 노트북에 GPS가 없거나, 네트워크 설정을 확인하세요.";
+            } else if (err.code === 3) {
+              message += "위치 요청 시간이 초과됐습니다.";
+            } else {
+              message += err.message;
+            }
+            alert(message);
+          },
           { enableHighAccuracy: true }
         );
       } else {
-        console.error("❌ 브라우저에서 위치 정보를 지원하지 않음");
+        alert("브라우저가 위치 정보를 지원하지 않습니다.");
       }
     }
 
@@ -133,57 +194,42 @@
       }
     }
 
-    // 지도에 사용자 마커 표시 및 갱신
-    function showUser(uid, lat, lon, heading) {
-      const latNum = parseFloat(lat);
-      const lonNum = parseFloat(lon);
-      if (isNaN(latNum) || isNaN(lonNum)) return;
-
-      let icon = uid === myUid ? redIcon : blueIcon;
-      let popupMsg = uid === myUid ? '나(Myself)' : uid;
-
-      if (!userMarkers[uid]) {
-        userMarkers[uid] = L.marker([latNum, lonNum], {icon: icon})
-          .addTo(map)
-          .bindPopup(`👤 ${popupMsg}`);
-      } else {
-        userMarkers[uid].setLatLng([latNum, lonNum]);
-      }
-    }
-
-    // 모든 사용자 위치 실시간 반영(나 포함)
-    function listenAllUsers() {
-      onValue(ref(db, "locations"), snapshot => {
-        const locations = snapshot.val();
-        if (!locations) return;
-        for (const uid in locations) {
-          const user = locations[uid];
-          showUser(uid, user.latitude, user.longitude, user.heading);
-        }
-      });
-    }
-
-    // 로그인 UI 및 phone auth 제어
+    // 로그인 UI 전환 및 phone auth 제어
     let confirmationResult = null;
+    let recaptchaVerifier = null;
 
-    // 리캡차 초기화
-    const recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-      size: 'normal',
-      callback: () => {}
-    });
+    // 버튼 선택 이벤트
+    document.getElementById('btn-phone').onclick = () => {
+      document.getElementById('login-select').style.display = 'none';
+      document.getElementById('phone-section').style.display = '';
+      if(!recaptchaVerifier) {
+        recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
+          size: 'normal',
+          callback: () => {}
+        });
+      }
+    };
+    document.getElementById('btn-guest').onclick = () => {
+      document.getElementById('login-select').style.display = 'none';
+      signInAnonymously(auth).catch((err) => {
+        alert("익명 로그인 실패: " + err.message);
+        document.getElementById('login-select').style.display = '';
+      });
+    };
 
     // 전화번호 폼 제출(인증번호 요청)
     document.getElementById('phone-login-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const phoneNumber = document.getElementById('phone-number').value;
+      document.getElementById('msg').innerText = '';
       try {
         confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
-        document.getElementById('code-login-form').style.display = '';
-        document.getElementById('phone-login-form').style.display = 'none';
+        document.getElementById('otp-section').style.display = '';
+        document.getElementById('phone-section').style.display = 'none';
         alert('인증번호(OTP)를 입력하세요!');
       } catch (error) {
-        alert("전화번호 인증 요청 실패: " + error.message);
-        recaptchaVerifier.clear();
+        document.getElementById('msg').innerText = "전화번호 인증 요청 실패: " + error.message;
+        if(recaptchaVerifier) recaptchaVerifier.clear();
       }
     });
 
@@ -191,30 +237,28 @@
     document.getElementById('code-login-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const code = document.getElementById('otp-code').value;
+      document.getElementById('msg-otp').innerText = "";
       try {
         await confirmationResult.confirm(code);
-        document.getElementById('login-section').style.display = 'none';
       } catch (error) {
-        alert("인증 실패: " + error.message);
+        document.getElementById('msg-otp').innerText = "인증 실패: " + error.message;
       }
     });
 
-    // 익명로그인 버튼
-    document.getElementById('anonymous-login').addEventListener('click', () => {
-      signInAnonymously(auth).catch((err) => {
-        alert("익명 로그인 실패: " + err.message);
-      });
-    });
-
-    // 로그인 성공(onAuthStateChanged) 후 위치추적&전체 위치 실시간 표시
+    // 로그인 성공(onAuthStateChanged) 후 UI/위치추적/실시간 위치표시 시작
     onAuthStateChanged(auth, (user) => {
       if (user) {
-        document.getElementById('login-section').style.display = 'none';
         myUid = user.uid;
-        trackLocation(myUid);       // 1. 내 위치 마커 즉시 표시&업로드
-        listenAllUsers();           // 2. 모든 유저 위치 실시간 동기화
+        document.getElementById('login-select').style.display = 'none';
+        document.getElementById('phone-section').style.display = 'none';
+        document.getElementById('otp-section').style.display = 'none';
+        trackLocation(myUid);
+        listenAllUsers();
       } else {
-        document.getElementById('login-section').style.display = '';
+        // 재로그인/로그아웃 처리
+        document.getElementById('login-select').style.display = '';
+        document.getElementById('phone-section').style.display = 'none';
+        document.getElementById('otp-section').style.display = 'none';
       }
     });
   </script>
