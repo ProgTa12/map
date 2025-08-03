@@ -110,16 +110,18 @@
         userUl.innerHTML = '';
         const users = snapshot.val();
         if (!users) {
-          userUl.innerHTML = <li>없음</li>;
+          userUl.innerHTML = `<li>없음</li>`;
           return;
         }
         Object.keys(users).forEach(uid => {
           const u = users[uid];
           const nick = u.nickname || uid.substring(0,8);
-          userUl.innerHTML += <li class="${uid===myUid?"user-me":""}">
-            <span class="user-online">●</span>
-            ${nick}${uid===myUid?" <b>(나)</b>":""}
-          </li>;
+          userUl.innerHTML += `
+            <li class="${uid===myUid ? "user-me" : ""}">
+              <span class="user-online">●</span>
+              ${nick}${uid===myUid ? " <b>(나)</b>" : ""}
+            </li>
+          `;
         });
       });
     }
@@ -282,3 +284,4 @@
   </script>
 </body>
 </html>
+
