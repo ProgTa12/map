@@ -4,7 +4,6 @@
   <meta charset="utf-8">
   <title>실시간 위치 및 방향 공유 지도</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
@@ -13,10 +12,7 @@
 </head>
 <body>
   <div id="map"></div>
-
-  <!-- Leaflet JS -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
     import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
@@ -50,11 +46,11 @@
     const userLabels = {};
 
     let myHeading = 0; 
-    let myUid = null; // 내 UID 저장
+    let myUid = null; 
 
-    // UID별 위치 업로드
+    // 위치 업로드
     function uploadLocation(userId, lat, lon, heading) {
-      set(ref(db, "locations/" + userId), {
+      return set(ref(db, "locations/" + userId), {
         latitude: lat,
         longitude: lon,
         heading: heading,
@@ -62,21 +58,21 @@
       }).catch(err => console.error("DB 업로드 실패:", err));
     }
 
-    // 내 위치 갱신
-    function updateLocation(userId) {
+    // 내 위치 실시간 추적
+    function trackLocation(userId) {
       if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
+        navigator.geolocation.watchPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            console.log("✅ 위치 가져오기 성공:", lat, lon);
+            console.log("📍 내 위치:", lat, lon);
             uploadLocation(userId, lat, lon, myHeading);
           },
-          (err) => console.error("❌ 위치 가져오기 실패:", err.code, err.message),
+          (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
           { enableHighAccuracy: true }
         );
       } else {
-        console.error("❌ 이 브라우저는 위치 정보를 지원하지 않습니다.");
+        console.error("❌ 브라우저에서 위치 정보를 지원하지 않음");
       }
     }
 
@@ -84,7 +80,7 @@
     if (window.DeviceOrientationEvent) {
       const handleOrientation = (event) => {
         if (event.alpha !== null) {
-          myHeading = 360 - event.alpha; 
+          myHeading = 360 - event.alpha;
         }
       };
       if (typeof DeviceOrientationEvent.requestPermission === "function") {
@@ -102,22 +98,13 @@
       }
     }
 
-    // UID별 사용자 표시
+    // 지도에 사용자 표시
     function showUser(uid, lat, lon, heading) {
       const latNum = parseFloat(lat);
       const lonNum = parseFloat(lon);
       const headingNum = Number(heading) || 0;
 
-      if (isNaN(latNum) || isNaN(lonNum)) {
-        console.error("❌ 잘못된 좌표 데이터:", lat, lon);
-        return;
-      }
-
-      console.log(`🗺️ 사용자 표시: ${uid}`, latNum, lonNum, headingNum);
-
-      if (uid === myUid) {
-        map.setView([latNum, lonNum], 15);
-      }
+      if (isNaN(latNum) || isNaN(lonNum)) return;
 
       if (!userMarkers[uid]) {
         userMarkers[uid] = L.marker([latNum, lonNum]).addTo(map)
@@ -126,46 +113,39 @@
         userMarkers[uid].setLatLng([latNum, lonNum]);
       }
 
-      // 기존 화살표/라벨 제거
-      if (userArrows[uid]) {
-        map.removeLayer(userArrows[uid]);
-        delete userArrows[uid];
-      }
-      if (userLabels[uid]) {
-        map.removeLayer(userLabels[uid]);
-        delete userLabels[uid];
-      }
+      if (userArrows[uid]) map.removeLayer(userArrows[uid]);
+      if (userLabels[uid]) map.removeLayer(userLabels[uid]);
 
-      // 방향 화살표
       const arrowLength = 0.0007;
       const rad = headingNum * (Math.PI / 180);
       const endLat = latNum + arrowLength * Math.cos(rad);
       const endLon = lonNum + arrowLength * Math.sin(rad);
 
-      if (!isNaN(endLat) && !isNaN(endLon)) {
-        userArrows[uid] = L.polyline([[latNum, lonNum], [endLat, endLon]], {
-          color: "red",
-          weight: 3,
-          opacity: 0.8
-        }).addTo(map);
+      userArrows[uid] = L.polyline([[latNum, lonNum], [endLat, endLon]], {
+        color: "red",
+        weight: 3,
+        opacity: 0.8
+      }).addTo(map);
 
-        // 방향 텍스트
-        let directionText = "북";
-        if (headingNum >= 45 && headingNum < 135) directionText = "동";
-        else if (headingNum >= 135 && headingNum < 225) directionText = "남";
-        else if (headingNum >= 225 && headingNum < 315) directionText = "서";
+      let directionText = "북";
+      if (headingNum >= 45 && headingNum < 135) directionText = "동";
+      else if (headingNum >= 135 && headingNum < 225) directionText = "남";
+      else if (headingNum >= 225 && headingNum < 315) directionText = "서";
 
-        userLabels[uid] = L.marker([endLat, endLon], {
-          icon: L.divIcon({
-            className: "direction-label",
-            html: `<b>${directionText}</b>`,
-            iconSize: [30, 20]
-          })
-        }).addTo(map);
+      userLabels[uid] = L.marker([endLat, endLon], {
+        icon: L.divIcon({
+          className: "direction-label",
+          html: `<b>${directionText}</b>`,
+          iconSize: [30, 20]
+        })
+      }).addTo(map);
+
+      if (uid === myUid) {
+        map.setView([latNum, lonNum], 15);
       }
     }
 
-    // Firebase 로그인 및 위치 공유 시작
+    // Firebase 로그인
     signInAnonymously(auth).then(() => {
       console.log("✅ 익명 로그인 성공");
     }).catch(console.error);
@@ -173,21 +153,16 @@
     onAuthStateChanged(auth, (user) => {
       if (user) {
         myUid = user.uid;
-        console.log("👤 로그인된 사용자 UID:", myUid);
+        console.log("👤 UID:", myUid);
 
-        // 내 위치 주기적 업로드
-        updateLocation(myUid);
-        setInterval(() => updateLocation(myUid), 3000);
+        // 내 위치 실시간 추적
+        trackLocation(myUid);
 
         // 모든 사용자 위치 구독
         const locationsRef = ref(db, "locations");
         onValue(locationsRef, (snapshot) => {
           const data = snapshot.val();
-          if (!data) {
-            console.log("⚠️ 현재 DB에 위치 데이터 없음");
-            return;
-          }
-          console.log("📡 DB에서 받은 데이터:", data);
+          if (!data) return;
           for (const uid in data) {
             const { latitude, longitude, heading } = data[uid];
             showUser(uid, latitude, longitude, heading);
