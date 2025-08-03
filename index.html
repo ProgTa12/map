@@ -40,9 +40,8 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 사용자별 마커/화살표/라벨 저장
+    // 사용자별 마커 저장
     const userMarkers = {};
-
     let myHeading = 0; 
     let myUid = null; 
 
@@ -53,7 +52,9 @@
         longitude: lon,
         heading: heading,
         timestamp: Date.now()
-      }).catch(err => console.error("DB 업로드 실패:", err));
+      }).then(() => {
+        console.log(`✅ 내 위치 업로드 완료: ${lat}, ${lon}, heading=${heading}`);
+      }).catch(err => console.error("❌ DB 업로드 실패:", err));
     }
 
     // 내 위치 실시간 추적
@@ -63,9 +64,8 @@
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            // 1. 내 위치 지도에 표시
+            console.log(`📌 내 위치 갱신: ${lat}, ${lon}`);
             showUser(userId, lat, lon, myHeading);
-            // 2. DB에 업로드
             uploadLocation(userId, lat, lon, myHeading);
           },
           (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
@@ -102,21 +102,33 @@
     function showUser(uid, lat, lon, heading) {
       const latNum = parseFloat(lat);
       const lonNum = parseFloat(lon);
-
       if (isNaN(latNum) || isNaN(lonNum)) return;
 
-      // 기존 마커가 없으면 생성
+      const color = (uid === myUid) ? "red" : "blue";
+
+      const arrowIcon = L.divIcon({
+        className: "custom-arrow",
+        html: `
+          <div style="text-align:center;">
+            <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
+            <div style="width:12px; height:12px; background:${color}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
+          </div>
+        `,
+        iconSize: [30, 40],
+        iconAnchor: [15, 20]
+      });
+
       if (!userMarkers[uid]) {
-        // 내 위치와 다른 사용자 구분 (색상 등)
-        let markerOptions = {};
-        if (uid === myUid) {
-          markerOptions = { color: "red" }; // 내 위치는 빨간 마커
-        }
-        userMarkers[uid] = L.marker([latNum, lonNum], markerOptions)
+        userMarkers[uid] = L.marker([latNum, lonNum], { icon: arrowIcon })
           .addTo(map)
           .bindPopup(`👤 ${uid === myUid ? '나(Myself)' : uid}`);
+        console.log(`➕ 새 사용자 추가됨: ${uid}, 위치=${latNum},${lonNum}`);
       } else {
         userMarkers[uid].setLatLng([latNum, lonNum]);
+        userMarkers[uid].setIcon(arrowIcon);
+        if (uid !== myUid) {
+          console.log(`📍 팀원 위치 갱신: UID=${uid}, 위치=${latNum},${lonNum}, heading=${heading}`);
+        }
       }
     }
 
@@ -124,25 +136,28 @@
     function listenAllUsers() {
       onValue(ref(db, "locations"), snapshot => {
         const locations = snapshot.val();
+        if (!locations) return;
+        console.log("🌍 전체 사용자 위치 갱신:", locations);
         for (const uid in locations) {
           const user = locations[uid];
-          showUser(uid, user.latitude, user.longitude, user.heading);
+          showUser(uid, user.latitude, user.longitude, user.heading || 0);
         }
       });
     }
 
-    // 1. 익명(로그인) 인증 후 내 위치 추적 시작
+    // 익명 로그인 후 내 위치 추적 시작
     onAuthStateChanged(auth, (user) => {
       if (user) {
         myUid = user.uid;
-        trackLocation(myUid); // 내 위치 추적 시작
-        listenAllUsers();     // 다른 사용자 위치도 지도에 표시
+        console.log(`✅ 로그인 성공, 내 UID: ${myUid}`);
+        trackLocation(myUid);
+        listenAllUsers();
       }
     });
 
-    // 인증(로그인) 시작
+    // 인증 시작
     signInAnonymously(auth).catch((err) => {
-      console.error("로그인 실패:", err);
+      console.error("❌ 로그인 실패:", err);
     });
   </script>
 </body>
