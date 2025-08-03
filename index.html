@@ -22,7 +22,7 @@
     import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
 
-    // Firebase 설정 (config.js 내용 직접 포함)
+    // Firebase 설정 (config.js 내용을 직접 포함)
     const firebaseConfig = {
       apiKey: "AIzaSyBvLnMA7jF-1AoDQlgLdEDKFDyWk4N29mY",
       authDomain: "gps-mapping-397bc.firebaseapp.com",
@@ -33,9 +33,9 @@
       measurementId: "G-XLKW5QD56K"
     };
 
-    // Firebase 초기화
+    // Firebase 초기화 + 정확한 DB 지역 URL 지정
     const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
+    const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
     const auth = getAuth(app);
 
     // 지도 초기화
@@ -58,7 +58,7 @@
         longitude: lon,
         heading: heading,
         timestamp: Date.now()
-      });
+      }).catch(err => console.error("DB 업로드 실패:", err));
     }
 
     // 내 위치 갱신
@@ -68,11 +68,14 @@
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
+            console.log("위치 가져오기 성공:", lat, lon); // 로그 추가
             uploadLocation(userId, lat, lon, myHeading);
           },
-          (err) => console.warn("위치 가져오기 실패:", err.message),
+          (err) => console.error("위치 가져오기 실패:", err),
           { enableHighAccuracy: true }
         );
+      } else {
+        console.error("이 브라우저는 위치 정보를 지원하지 않습니다.");
       }
     }
 
@@ -136,6 +139,7 @@
     onAuthStateChanged(auth, (user) => {
       if (user) {
         const userId = user.uid;
+        console.log("로그인된 사용자 UID:", userId);
 
         // 내 위치 주기적 업로드
         updateLocation(userId);
@@ -145,7 +149,10 @@
         const locationsRef = ref(db, "locations");
         onValue(locationsRef, (snapshot) => {
           const data = snapshot.val();
-          if (!data) return;
+          if (!data) {
+            console.log("현재 DB에 위치 데이터 없음");
+            return;
+          }
           for (const uid in data) {
             const { latitude, longitude, heading } = data[uid];
             showUser(uid, latitude, longitude, heading || 0);
