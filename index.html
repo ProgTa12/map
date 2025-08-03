@@ -23,7 +23,7 @@
       apiKey: "AIzaSyBvLnMA7jF-1AoDQlgLdEDKFDyWk4N29mY",
       authDomain: "gps-mapping-397bc.firebaseapp.com",
       projectId: "gps-mapping-397bc",
-      storageBucket: "gps-mapping-397bc.firebasestorage.app",
+      storageBucket: "gps-mapping-397bc.appspot.com",
       messagingSenderId: "338156458292",
       appId: "1:338156458292:web:8380c00a6fbd292cd41561",
       measurementId: "G-XLKW5QD56K"
@@ -42,8 +42,6 @@
 
     // 사용자별 마커/화살표/라벨 저장
     const userMarkers = {};
-    const userArrows = {};
-    const userLabels = {};
 
     let myHeading = 0; 
     let myUid = null; 
@@ -65,7 +63,9 @@
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            console.log("📍 내 위치:", lat, lon);
+            // 1. 내 위치 지도에 표시
+            showUser(userId, lat, lon, myHeading);
+            // 2. DB에 업로드
             uploadLocation(userId, lat, lon, myHeading);
           },
           (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
@@ -98,77 +98,51 @@
       }
     }
 
-    // 지도에 사용자 표시
+    // 지도에 사용자 마커 표시 및 갱신
     function showUser(uid, lat, lon, heading) {
       const latNum = parseFloat(lat);
       const lonNum = parseFloat(lon);
-      const headingNum = Number(heading) || 0;
 
       if (isNaN(latNum) || isNaN(lonNum)) return;
 
+      // 기존 마커가 없으면 생성
       if (!userMarkers[uid]) {
-        userMarkers[uid] = L.marker([latNum, lonNum]).addTo(map)
-          .bindPopup(`👤 ${uid}`);
+        // 내 위치와 다른 사용자 구분 (색상 등)
+        let markerOptions = {};
+        if (uid === myUid) {
+          markerOptions = { color: "red" }; // 내 위치는 빨간 마커
+        }
+        userMarkers[uid] = L.marker([latNum, lonNum], markerOptions)
+          .addTo(map)
+          .bindPopup(`👤 ${uid === myUid ? '나(Myself)' : uid}`);
       } else {
         userMarkers[uid].setLatLng([latNum, lonNum]);
       }
-
-      if (userArrows[uid]) map.removeLayer(userArrows[uid]);
-      if (userLabels[uid]) map.removeLayer(userLabels[uid]);
-
-      const arrowLength = 0.0007;
-      const rad = headingNum * (Math.PI / 180);
-      const endLat = latNum + arrowLength * Math.cos(rad);
-      const endLon = lonNum + arrowLength * Math.sin(rad);
-
-      userArrows[uid] = L.polyline([[latNum, lonNum], [endLat, endLon]], {
-        color: "red",
-        weight: 3,
-        opacity: 0.8
-      }).addTo(map);
-
-      let directionText = "북";
-      if (headingNum >= 45 && headingNum < 135) directionText = "동";
-      else if (headingNum >= 135 && headingNum < 225) directionText = "남";
-      else if (headingNum >= 225 && headingNum < 315) directionText = "서";
-
-      userLabels[uid] = L.marker([endLat, endLon], {
-        icon: L.divIcon({
-          className: "direction-label",
-          html: `<b>${directionText}</b>`,
-          iconSize: [30, 20]
-        })
-      }).addTo(map);
-
-      if (uid === myUid) {
-        map.setView([latNum, lonNum], 15);
-      }
     }
 
-    // Firebase 로그인
-    signInAnonymously(auth).then(() => {
-      console.log("✅ 익명 로그인 성공");
-    }).catch(console.error);
+    // 모든 사용자 위치 실시간 반영
+    function listenAllUsers() {
+      onValue(ref(db, "locations"), snapshot => {
+        const locations = snapshot.val();
+        for (const uid in locations) {
+          const user = locations[uid];
+          showUser(uid, user.latitude, user.longitude, user.heading);
+        }
+      });
+    }
 
+    // 1. 익명(로그인) 인증 후 내 위치 추적 시작
     onAuthStateChanged(auth, (user) => {
       if (user) {
         myUid = user.uid;
-        console.log("👤 UID:", myUid);
-
-        // 내 위치 실시간 추적
-        trackLocation(myUid);
-
-        // 모든 사용자 위치 구독
-        const locationsRef = ref(db, "locations");
-        onValue(locationsRef, (snapshot) => {
-          const data = snapshot.val();
-          if (!data) return;
-          for (const uid in data) {
-            const { latitude, longitude, heading } = data[uid];
-            showUser(uid, latitude, longitude, heading);
-          }
-        });
+        trackLocation(myUid); // 내 위치 추적 시작
+        listenAllUsers();     // 다른 사용자 위치도 지도에 표시
       }
+    });
+
+    // 인증(로그인) 시작
+    signInAnonymously(auth).catch((err) => {
+      console.error("로그인 실패:", err);
     });
   </script>
 </body>
