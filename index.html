@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치 및 방향 공유 지도</title>
+  <title>실시간 위치 및 방향 공유 지도 (디버그 모드)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -40,10 +40,19 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 사용자별 마커 저장
     const userMarkers = {};
-    let myHeading = 0; 
-    let myUid = null; 
+    let myHeading = 0;
+    let myUid = null;
+
+    // 연결 상태 확인
+    const connectedRef = ref(db, ".info/connected");
+    onValue(connectedRef, (snap) => {
+      if (snap.val() === true) {
+        console.log("🔗 Firebase DB 연결됨");
+      } else {
+        console.log("❌ Firebase DB 연결 안 됨");
+      }
+    });
 
     // 위치 업로드
     function uploadLocation(userId, lat, lon, heading) {
@@ -57,7 +66,7 @@
       }).catch(err => console.error("❌ DB 업로드 실패:", err));
     }
 
-    // 내 위치 실시간 추적
+    // 내 위치 추적
     function trackLocation(userId) {
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
@@ -98,7 +107,7 @@
       }
     }
 
-    // 지도에 사용자 마커 표시 및 갱신
+    // 지도에 사용자 표시
     function showUser(uid, lat, lon, heading) {
       const latNum = parseFloat(lat);
       const lonNum = parseFloat(lon);
@@ -132,38 +141,18 @@
       }
     }
 
-    // 모든 사용자 위치 실시간 반영
+    // DB 구독
     function listenAllUsers() {
-      onValue(ref(db, "locations"), snapshot => {
+      const locRef = ref(db, "locations");
+      console.log("📡 Firebase DB 구독 시도중...");
+      onValue(locRef, (snapshot) => {
+        console.log("✅ DB 구독 성공, 스냅샷 수신");
         const locations = snapshot.val();
         if (!locations) {
-          console.log("⚠️ 위치 데이터 없음");
+          console.log("⚠️ 현재 DB에 위치 데이터 없음");
           return;
         }
-        console.log("🌍 전체 사용자 위치 갱신:", locations);
+        console.log("🌍 DB에서 불러온 전체 데이터:", locations);
         for (const uid in locations) {
-          console.log("📡 수신된 UID:", uid, "데이터:", locations[uid]);
           const user = locations[uid];
-          showUser(uid, user.latitude, user.longitude, user.heading || 0);
-        }
-      });
-    }
-
-
-    // 익명 로그인 후 내 위치 추적 시작
-    onAuthStateChanged(auth, (user) => {
-      if (user) {
-        myUid = user.uid;
-        console.log(`✅ 로그인 성공, 내 UID: ${myUid}`);
-        trackLocation(myUid);
-        listenAllUsers();
-      }
-    });
-
-    // 인증 시작
-    signInAnonymously(auth).catch((err) => {
-      console.error("❌ 로그인 실패:", err);
-    });
-  </script>
-</body>
-</html>
+          console.log(`📡 수신된 UID=${uid}, 위도=${user.latitude}, 경도=${user.longitude}, heading=${user.heading}`);
