@@ -8,6 +8,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
+    .direction-label { font-size: 14px; color: black; }
   </style>
 </head>
 <body>
@@ -20,7 +21,17 @@
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
     import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
-    import { firebaseConfig } from "./config.js"; // config.js는 .gitignore 처리됨
+
+    // Firebase 설정 (config.js 내용 직접 포함)
+    const firebaseConfig = {
+      apiKey: "AIzaSyBvLnMA7jF-1AoDQlgLdEDKFDyWk4N29mY",
+      authDomain: "gps-mapping-397bc.firebaseapp.com",
+      projectId: "gps-mapping-397bc",
+      storageBucket: "gps-mapping-397bc.firebasestorage.app",
+      messagingSenderId: "338156458292",
+      appId: "1:338156458292:web:8380c00a6fbd292cd41561",
+      measurementId: "G-XLKW5QD56K"
+    };
 
     // Firebase 초기화
     const app = initializeApp(firebaseConfig);
@@ -33,7 +44,7 @@
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 사용자별 마커와 방향 화살표 저장소
+    // 사용자별 마커/화살표/라벨 저장
     const userMarkers = {};
     const userArrows = {};
     const userLabels = {};
@@ -73,7 +84,6 @@
         }
       }, true);
 
-      // iOS용 권한 요청
       if (typeof DeviceOrientationEvent.requestPermission === "function") {
         DeviceOrientationEvent.requestPermission().catch(console.error);
       }
@@ -81,7 +91,7 @@
 
     // UID별 사용자 표시
     function showUser(uid, lat, lon, heading) {
-      // 마커 생성/업데이트
+      // 기존 마커/화살표/라벨 제거
       if (userMarkers[uid]) {
         userMarkers[uid].setLatLng([lat, lon]);
         if (userArrows[uid]) map.removeLayer(userArrows[uid]);
@@ -92,7 +102,7 @@
       }
 
       // 방향 화살표
-      const arrowLength = 0.0007; // 화살표 길이
+      const arrowLength = 0.0007;
       const rad = heading * (Math.PI / 180);
       const endLat = lat + arrowLength * Math.cos(rad);
       const endLon = lon + arrowLength * Math.sin(rad);
@@ -103,7 +113,7 @@
         opacity: 0.8
       }).addTo(map);
 
-      // 방향 텍스트 (북, 동, 남, 서)
+      // 방향 텍스트
       let directionText = "북";
       if (heading >= 45 && heading < 135) directionText = "동";
       else if (heading >= 135 && heading < 225) directionText = "남";
