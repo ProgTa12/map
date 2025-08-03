@@ -136,14 +136,19 @@
     function listenAllUsers() {
       onValue(ref(db, "locations"), snapshot => {
         const locations = snapshot.val();
-        if (!locations) return;
+        if (!locations) {
+          console.log("⚠️ 위치 데이터 없음");
+          return;
+        }
         console.log("🌍 전체 사용자 위치 갱신:", locations);
         for (const uid in locations) {
+          console.log("📡 수신된 UID:", uid, "데이터:", locations[uid]);
           const user = locations[uid];
           showUser(uid, user.latitude, user.longitude, user.heading || 0);
         }
       });
     }
+
 
     // 익명 로그인 후 내 위치 추적 시작
     onAuthStateChanged(auth, (user) => {
@@ -162,3 +167,4 @@
   </script>
 </body>
 </html>
+
