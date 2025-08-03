@@ -10,6 +10,7 @@
     #login-section { position: absolute; z-index: 1000; background: white; padding: 16px; border-radius:6px; border:1px solid #ddd; top:10px; left:10px; }
     #login-section input { margin-bottom:5px;}
     #login-section label { display:block;}
+    #user-list { position:absolute; top:10px; right:10px; background:white; padding:10px; border-radius:6px; border:1px solid #ddd; z-index:1000; width:200px; max-height:200px; overflow:auto; font-size:14px; }
   </style>
 </head>
 <body>
@@ -29,7 +30,12 @@
     </form>
     <button id="anonymous-login">익명 로그인</button>
   </div>
+  <div id="user-list">
+    <b>접속자 목록</b>
+    <ul id="user-list-ul"></ul>
+  </div>
   <div id="map"></div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
@@ -47,43 +53,31 @@
       measurementId: "G-XLKW5QD56K"
     };
 
-    // Firebase 초기화
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
     const auth = getAuth(app);
 
-    // 지도 초기화
     const map = L.map('map').setView([36.5, 127.8], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 사용자별 마커 저장
     const userMarkers = {};
     let myUid = null;
     let myHeading = 0;
 
-    // 마커 아이콘
     const redIcon = new L.Icon({
       iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
       shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
+      iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
     });
     const blueIcon = new L.Icon({
       iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
       shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
+      iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
     });
 
-    // 위치 업로드
     function uploadLocation(userId, lat, lon, heading) {
-      console.log(⬆️ 위치 업로드: UID=${userId}, 위도=${lat}, 경도=${lon}, heading=${heading});
       return set(ref(db, "locations/" + userId), {
         latitude: lat,
         longitude: lon,
@@ -92,26 +86,21 @@
       }).catch(err => console.error("DB 업로드 실패:", err));
     }
 
-    // 내 위치 추적 및 업로드
     function trackLocation(userId) {
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            console.log(📍 내 위치 갱신: ${lat}, ${lon});
             uploadLocation(userId, lat, lon, myHeading);
             showUser(userId, lat, lon, myHeading);
           },
           (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
-          { enableHighAccuracy: true }
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
         );
-      } else {
-        console.error("❌ 브라우저에서 위치 정보를 지원하지 않음");
       }
     }
 
-    // 방향 감지
     if (window.DeviceOrientationEvent) {
       const handleOrientation = (event) => {
         if (event.alpha !== null) {
@@ -121,11 +110,7 @@
       if (typeof DeviceOrientationEvent.requestPermission === "function") {
         document.body.addEventListener("click", () => {
           DeviceOrientationEvent.requestPermission()
-            .then((res) => {
-              if (res === "granted") {
-                window.addEventListener("deviceorientationabsolute", handleOrientation, true);
-              }
-            })
+            .then((res) => { if (res === "granted") window.addEventListener("deviceorientationabsolute", handleOrientation, true); })
             .catch(console.error);
         });
       } else {
@@ -133,29 +118,20 @@
       }
     }
 
-    // 사용자 마커 표시
     function showUser(uid, lat, lon, heading) {
-      console.log(➡️ showUser 실행: UID=${uid}, 위도=${lat}, 경도=${lon}, heading=${heading});
       const latNum = Number(lat);
       const lonNum = Number(lon);
-      const headingNum = Number(heading) || 0;
-
-      if (isNaN(latNum) || isNaN(lonNum)) {
-        console.error(❌ 좌표 NaN (${uid}):, lat, lon);
-        return;
-      }
+      if (isNaN(latNum) || isNaN(lonNum)) return;
 
       const icon = uid === myUid ? redIcon : blueIcon;
-      const popupMsg = uid === myUid ? '나(Myself)' : 팀원 (${uid.slice(0,6)});
+      const popupMsg = uid === myUid ? '나(Myself)' : `팀원 (${uid.slice(0,6)})`;
 
       if (!userMarkers[uid]) {
         userMarkers[uid] = L.marker([latNum, lonNum], { icon })
           .addTo(map)
-          .bindPopup(👤 ${popupMsg});
-        console.log(✅ 마커 생성: ${popupMsg});
+          .bindPopup(`👤 ${popupMsg}`);
       } else {
         userMarkers[uid].setLatLng([latNum, lonNum]);
-        console.log(🔄 마커 갱신: ${popupMsg});
       }
 
       if (uid === myUid) {
@@ -163,12 +139,22 @@
       }
     }
 
-    // 모든 사용자 위치 구독
+    function updateUserList(locations) {
+      const ul = document.getElementById('user-list-ul');
+      ul.innerHTML = '';
+      for (const uid in locations) {
+        const user = locations[uid];
+        const li = document.createElement('li');
+        li.textContent = `${uid.slice(0,6)}: (${user.latitude.toFixed(5)}, ${user.longitude.toFixed(5)})`;
+        ul.appendChild(li);
+      }
+    }
+
     function listenAllUsers() {
       onValue(ref(db, "locations"), snapshot => {
         const locations = snapshot.val();
-        console.log("📡 DB 데이터 수신:", locations);
         if (!locations) return;
+        updateUserList(locations);
         for (const uid in locations) {
           const user = locations[uid];
           showUser(uid, user.latitude, user.longitude, user.heading);
@@ -176,18 +162,13 @@
       });
     }
 
-    // 로그인 UI 처리
-    let confirmationResult = null;
-    const recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {
-      size: 'normal',
-      callback: () => {}
-    });
-
+    // 로그인 처리
+    const recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', { size: 'normal' });
     document.getElementById('phone-login-form').addEventListener('submit', async function(e) {
       e.preventDefault();
       const phoneNumber = document.getElementById('phone-number').value;
       try {
-        confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
+        window.confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
         document.getElementById('code-login-form').style.display = '';
         document.getElementById('phone-login-form').style.display = 'none';
         alert('인증번호(OTP)를 입력하세요!');
@@ -196,18 +177,15 @@
         recaptchaVerifier.clear();
       }
     });
-
     document.getElementById('code-login-form').addEventListener('submit', async function(e) {
       e.preventDefault();
-      const code = document.getElementById('otp-code').value;
       try {
-        await confirmationResult.confirm(code);
+        await window.confirmationResult.confirm(document.getElementById('otp-code').value);
         document.getElementById('login-section').style.display = 'none';
       } catch (error) {
         alert("인증 실패: " + error.message);
       }
     });
-
     document.getElementById('anonymous-login').addEventListener('click', () => {
       signInAnonymously(auth).catch((err) => {
         alert("익명 로그인 실패: " + err.message);
@@ -218,7 +196,6 @@
       if (user) {
         document.getElementById('login-section').style.display = 'none';
         myUid = user.uid;
-        console.log("👤 로그인 성공, UID:", myUid);
         trackLocation(myUid);
         listenAllUsers();
       } else {
