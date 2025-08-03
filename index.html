@@ -2,67 +2,31 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치/접속자 공유</title>
+  <title>실시간 위치 및 방향 공유 지도</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
-    #login-select, #phone-section, #otp-section, #user-list-section {
-      position: absolute; z-index: 1000; background: white;
-      padding: 16px; border-radius: 6px; border: 1px solid #ddd;
-      min-width:240px; transition:0.3s;
-    }
-    #login-select, #phone-section, #otp-section {top:10px; left:10px;}
-    #user-list-section {
-      top:10px; right:10px; min-width:170px; width:auto; font-size:15px; opacity:0.92;
-      max-height:260px; overflow:auto;
-    }
-    #login-select button { width:100%; margin-bottom:8px; }
-    #phone-section, #otp-section { display:none;}
-    #msg {color:red; margin-top:4px;}
-    #user-list-section ul {margin:0; padding:0 2px; list-style:none;}
-    #user-list-section li {padding:2px 4px; margin-bottom:2px;}
-    .user-online {color:green; font-weight:bold; margin-right:6px;}
-    .user-me {color:#ff1944;}
+    #login-section { position: absolute; z-index: 1000; background: white; padding: 16px; border-radius:6px; border:1px solid #ddd; top:10px; left:10px; }
+    #user-list { position:absolute; top:10px; right:10px; background:white; padding:10px; border-radius:6px; border:1px solid #ddd; z-index:1000; width:260px; max-height:300px; overflow:auto; font-size:14px; }
+    #user-list li { margin: 4px 0; }
   </style>
 </head>
 <body>
-  <div id="login-select">
-    <button id="btn-phone">전화번호로 로그인</button>
-    <button id="btn-guest">게스트(익명) 로그인</button>
+  <div id="login-section">
+    <button id="anonymous-login">익명 로그인</button>
   </div>
-  <div id="phone-section">
-    <form id="phone-login-form">
-      <label>전화번호 (예: +821012345678)<br>
-        <input id="phone-number" type="text" placeholder="+8210xxxxxxx" required>
-      </label>
-      <div id="recaptcha-container"></div>
-      <button type="submit" style="margin-top:5px;">인증번호 받기</button>
-      <div id="msg"></div>
-    </form>
-  </div>
-  <div id="otp-section">
-    <form id="code-login-form">
-      <label>인증번호 (SMS로 수신한 6자리):
-        <input id="otp-code" type="text" required>
-      </label>
-      <button type="submit" style="margin-top:5px;">인증</button>
-      <div id="msg-otp"></div>
-    </form>
-  </div>
-  
-  <!-- 접속자 목록 표시창 -->
-  <div id="user-list-section" style="display:none;">
+  <div id="user-list">
     <b>접속자 목록</b>
     <ul id="user-list-ul"></ul>
   </div>
-
   <div id="map"></div>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-    import { getDatabase, ref, set, onValue, onDisconnect, remove } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
-    import { getAuth, signInAnonymously, RecaptchaVerifier, signInWithPhoneNumber, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+    import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
 
     // Firebase 설정
     const firebaseConfig = {
@@ -71,232 +35,134 @@
       projectId: "gps-mapping-397bc",
       storageBucket: "gps-mapping-397bc.appspot.com",
       messagingSenderId: "338156458292",
-      appId: "1:338156458292:web:8380c00a6fbd292cd41561",
-      measurementId: "G-XLKW5QD56K"
+      appId: "1:338156458292:web:8380c00a6fbd292cd41561"
     };
 
-    // Firebase 초기화
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
     const auth = getAuth(app);
 
+    // 지도 초기화
     const map = L.map('map').setView([36.5, 127.8], 7);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors'
     }).addTo(map);
 
-    // 마커 아이콘 설정
-    const redIcon = new L.Icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+    const userMarkers = {};
+    let myUid = null;
+    let myHeading = 0;
+
+    // 아이콘 정의
+    const redIcon = L.icon({
+      iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
       shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
     });
-    const blueIcon = new L.Icon({
+    const blueIcon = L.icon({
       iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-blue.png',
       shadowUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png',
       iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41]
     });
 
-    let myUid = null;
-    let myDisplay = '';
-    let isTracking = false;
-
-    // 각 사용자별 마커 저장
-    const userMarkers = {};
-
-    //---------------------------
-    // [1] 접속자 목록 실시간 표시
-    //---------------------------
-    function listenUserList() {
-      const userUl = document.getElementById('user-list-ul');
-      document.getElementById('user-list-section').style.display = '';
-      onValue(ref(db, "users"), snapshot => {
-        userUl.innerHTML = '';
-        const users = snapshot.val();
-        if (!users) {
-          userUl.innerHTML = `<li>없음</li>`;
-          return;
-        }
-        Object.keys(users).forEach(uid => {
-          const u = users[uid];
-          const nick = u.nickname || uid.substring(0,8);
-          // 내 uid 강조
-          userUl.innerHTML +=
-            `<li class="${uid===myUid?"user-me":""}"><span class="user-online">●</span>${nick}${uid===myUid?" <b>(나)</b>":""}</li>`;
-        });
-      });
-    }
-
-    //---------------------------
-    // [2] 실시간 위치 송수신
-    //---------------------------
-    function setAllUserMarkers(locations) {
-      const activeUids = new Set();
-      for (const uid in locations) {
-        const user = locations[uid];
-        if(!user || !user.latitude || !user.longitude) continue;
-        const lat = parseFloat(user.latitude);
-        const lon = parseFloat(user.longitude);
-        if(isNaN(lat) || isNaN(lon)) continue;
-        const isMe = (uid === myUid);
-        activeUids.add(uid);
-
-        if (!userMarkers[uid]) {
-          userMarkers[uid] = L.marker([lat, lon], {icon: isMe ? redIcon : blueIcon})
-            .addTo(map)
-            .bindPopup(isMe ? "나(Myself)" : (user.nickname || uid.substring(0,8)));
-        } else {
-          userMarkers[uid].setLatLng([lat, lon]);
-        }
-      }
-      // 지도상에서 사라진 유저는 마커 제거
-      Object.keys(userMarkers).forEach(uid => {
-        if (!activeUids.has(uid)) {
-          map.removeLayer(userMarkers[uid]);
-          delete userMarkers[uid];
-        }
-      });
-    }
-
-    function listenAllUsersLocation() {
-      onValue(ref(db, "locations"), snapshot => {
-        const locations = snapshot.val();
-        if (!locations) return;
-        setAllUserMarkers(locations);
-      });
-    }
-
-    //---------------------------
-    // [3] 내 위치 추적 및 송신
-    //---------------------------
+    // 위치 업로드
     function uploadLocation(userId, lat, lon, heading) {
+      console.log(`⬆️ 업로드: ${userId} (${lat}, ${lon}) heading=${heading}`);
       return set(ref(db, "locations/" + userId), {
         latitude: lat,
         longitude: lon,
         heading: heading,
-        timestamp: Date.now(),
-        nickname: myDisplay, // 사용자 닉네임(표시)
+        timestamp: Date.now()
       });
     }
 
+    // 내 위치 추적
     function trackLocation(userId) {
-      if (isTracking) return;
-      isTracking = true;
       if (navigator.geolocation) {
         navigator.geolocation.watchPosition(
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            uploadLocation(userId, lat, lon, 0); // heading은 예시로 0. 필요시 방향센서 반영
+            uploadLocation(userId, lat, lon, myHeading);
+            showUser(userId, lat, lon, myHeading);
           },
-          (err) => {
-            isTracking = false;
-            let msg = "❌ 위치 추적 실패: ";
-            if (err.code === 1) {
-              msg += "브라우저 위치 권한이 거부됨.";
-            } else if (err.code === 2) {
-              msg += "위치 정보를 사용할 수 없음.";
-            } else if (err.code === 3) {
-              msg += "위치 요청 시간이 초과됨.";
-            } else {
-              msg += err.message;
-            }
-            alert(msg);
-          },
-          { enableHighAccuracy: true }
+          (err) => console.error("❌ 위치 추적 실패:", err),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 10000 }
         );
+      }
+    }
+
+    // 사용자 마커 표시
+    function showUser(uid, lat, lon, heading) {
+      console.log(`➡️ showUser: ${uid} (${lat},${lon})`);
+      const latNum = Number(lat);
+      const lonNum = Number(lon);
+      if (isNaN(latNum) || isNaN(lonNum)) return;
+
+      const icon = uid === myUid ? redIcon : blueIcon;
+      const popupMsg = uid === myUid ? '나(Myself)' : `팀원 (${uid.slice(0,6)})`;
+
+      if (!userMarkers[uid]) {
+        userMarkers[uid] = L.marker([latNum, lonNum], { icon })
+          .addTo(map)
+          .bindPopup(popupMsg);
+        console.log(`✅ 마커 생성: ${popupMsg}`);
       } else {
-        alert("브라우저가 위치 정보를 지원하지 않습니다.");
+        userMarkers[uid].setLatLng([latNum, lonNum]);
+        console.log(`🔄 마커 갱신: ${popupMsg}`);
       }
     }
 
-    //---------------------------
-    // [4] 접속상태 등록 및 onDisconnect 처리
-    //---------------------------
-    function setUserPresence(uid, nickname) {
-      const userRef = ref(db, 'users/' + uid);
-      // 이름 직접 저장: 익명/전화번호 구분
-      set(userRef, {
-        nickname: nickname,
-        online: true,
-        lastActive: Date.now()
-      });
-      // onDisconnect: 접속 종료시 자동 삭제!
-      onDisconnect(userRef).remove();
-      // 위치도 퇴장시 제거
-      const locRef = ref(db, 'locations/' + uid);
-      onDisconnect(locRef).remove();
+    // 접속자 목록 업데이트
+    function updateUserList(locations) {
+      const ul = document.getElementById('user-list-ul');
+      ul.innerHTML = '';
+      for (const uid in locations) {
+        const user = locations[uid];
+        const li = document.createElement('li');
+        const isMe = uid === myUid ? " (나)" : "";
+        li.textContent = `${uid.slice(0,6)}${isMe}: 위도=${Number(user.latitude).toFixed(5)}, 경도=${Number(user.longitude).toFixed(5)}`;
+        ul.appendChild(li);
+      }
     }
 
-    //---------------------------
-    // [5] 로그인 UI 제어
-    //---------------------------
-    let confirmationResult = null;
-    let recaptchaVerifier = null;
-    document.getElementById('btn-phone').onclick = () => {
-      document.getElementById('login-select').style.display = 'none';
-      document.getElementById('phone-section').style.display = '';
-      if(!recaptchaVerifier) {
-        recaptchaVerifier = new RecaptchaVerifier(auth, 'recaptcha-container', {size: 'normal', callback: () => {}});
+    // 화면에 모든 사용자 보이도록 조정
+    function fitMapToAllUsers() {
+      const bounds = L.latLngBounds([]);
+      for (const uid in userMarkers) {
+        bounds.extend(userMarkers[uid].getLatLng());
       }
-    };
-    document.getElementById('btn-guest').onclick = () => {
-      document.getElementById('login-select').style.display = 'none';
-      // 익명 로그인 시 랜덤닉네임
-      myDisplay = "게스트" + Math.floor(Math.random()*9000+1000);
-      signInAnonymously(auth).catch((err) => {
-        alert("익명 로그인 실패: " + err.message);
-        document.getElementById('login-select').style.display = '';
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50] });
+      }
+    }
+
+    // 전체 사용자 위치 수신
+    function listenAllUsers() {
+      onValue(ref(db, "locations"), snapshot => {
+        const locations = snapshot.val();
+        console.log("📡 DB 수신:", locations);
+        if (!locations) return;
+        updateUserList(locations);
+        for (const uid in locations) {
+          const user = locations[uid];
+          showUser(uid, user.latitude, user.longitude, user.heading);
+        }
+        fitMapToAllUsers(); // 지도 자동 조정
       });
-    };
+    }
 
-    document.getElementById('phone-login-form').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      const phoneNumber = document.getElementById('phone-number').value;
-      document.getElementById('msg').innerText = '';
-      myDisplay = "번호" + phoneNumber.slice(-4); // 예시로 전화번호 뒤 4자리 닉네임(개선 가능)
-      try {
-        confirmationResult = await signInWithPhoneNumber(auth, phoneNumber, recaptchaVerifier);
-        document.getElementById('otp-section').style.display = '';
-        document.getElementById('phone-section').style.display = 'none';
-        alert('인증번호(OTP)를 입력하세요!');
-      } catch (error) {
-        document.getElementById('msg').innerText = "전화번호 인증 요청 실패: " + error.message;
-        if(recaptchaVerifier) recaptchaVerifier.clear();
-      }
+    // 로그인 처리
+    document.getElementById('anonymous-login').addEventListener('click', () => {
+      signInAnonymously(auth).catch(err => alert("로그인 실패: " + err.message));
     });
 
-    document.getElementById('code-login-form').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      const code = document.getElementById('otp-code').value;
-      document.getElementById('msg-otp').innerText = "";
-      try {
-        await confirmationResult.confirm(code);
-      } catch (error) {
-        document.getElementById('msg-otp').innerText = "인증 실패: " + error.message;
-      }
-    });
-
-    //---------------------------
-    // [6] onAuthStateChanged: 모든 로직 연결
-    //---------------------------
     onAuthStateChanged(auth, (user) => {
       if (user) {
+        document.getElementById('login-section').style.display = 'none';
         myUid = user.uid;
-        document.getElementById('login-select').style.display = 'none';
-        document.getElementById('phone-section').style.display = 'none';
-        document.getElementById('otp-section').style.display = 'none';
-        // 내 presence 등록 (닉네임/접속상태)
-        setUserPresence(myUid, myDisplay || user.uid.substring(0,8));
-        // 1. 위치: 내 위치 전송, 모든 위치 실시간 수신
+        console.log("👤 로그인됨:", myUid);
         trackLocation(myUid);
-        listenAllUsersLocation();
-        // 2. 접속자 목록 실시간 listen
-        listenUserList();
-      } else {
-        document.getElementById('login-select').style.display = '';
-        document.getElementById('phone-section').style.display = 'none';
-        document.getElementById('otp-section').style.display = 'none';
+        listenAllUsers();
       }
     });
   </script>
