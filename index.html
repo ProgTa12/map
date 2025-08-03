@@ -8,7 +8,8 @@
   <style>
     #map { width: 100vw; height: 100vh; }
     #login-section { position: absolute; z-index: 1000; background: white; padding: 16px; border-radius:6px; border:1px solid #ddd; top:10px; left:10px; }
-    #user-list { position:absolute; top:10px; right:10px; background:white; padding:10px; border-radius:6px; border:1px solid #ddd; z-index:1000; width:220px; max-height:250px; overflow:auto; font-size:14px; }
+    #user-list { position:absolute; top:10px; right:10px; background:white; padding:10px; border-radius:6px; border:1px solid #ddd; z-index:1000; width:260px; max-height:300px; overflow:auto; font-size:14px; }
+    #user-list li { margin: 4px 0; }
   </style>
 </head>
 <body>
@@ -90,7 +91,7 @@
       }
     }
 
-    // 사용자 표시
+    // 사용자 마커 표시
     function showUser(uid, lat, lon, heading) {
       console.log(`➡️ showUser: ${uid} (${lat},${lon})`);
       const latNum = Number(lat);
@@ -101,7 +102,9 @@
       const popupMsg = uid === myUid ? '나(Myself)' : `팀원 (${uid.slice(0,6)})`;
 
       if (!userMarkers[uid]) {
-        userMarkers[uid] = L.marker([latNum, lonNum], { icon }).addTo(map).bindPopup(popupMsg);
+        userMarkers[uid] = L.marker([latNum, lonNum], { icon })
+          .addTo(map)
+          .bindPopup(popupMsg);
         console.log(`✅ 마커 생성: ${popupMsg}`);
       } else {
         userMarkers[uid].setLatLng([latNum, lonNum]);
@@ -109,15 +112,27 @@
       }
     }
 
-    // 사용자 리스트 업데이트
+    // 접속자 목록 업데이트
     function updateUserList(locations) {
       const ul = document.getElementById('user-list-ul');
       ul.innerHTML = '';
       for (const uid in locations) {
         const user = locations[uid];
         const li = document.createElement('li');
-        li.textContent = `${uid.slice(0,6)}: (${user.latitude.toFixed(5)}, ${user.longitude.toFixed(5)})`;
+        const isMe = uid === myUid ? " (나)" : "";
+        li.textContent = `${uid.slice(0,6)}${isMe}: 위도=${Number(user.latitude).toFixed(5)}, 경도=${Number(user.longitude).toFixed(5)}`;
         ul.appendChild(li);
+      }
+    }
+
+    // 화면에 모든 사용자 보이도록 조정
+    function fitMapToAllUsers() {
+      const bounds = L.latLngBounds([]);
+      for (const uid in userMarkers) {
+        bounds.extend(userMarkers[uid].getLatLng());
+      }
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [50, 50] });
       }
     }
 
@@ -132,6 +147,7 @@
           const user = locations[uid];
           showUser(uid, user.latitude, user.longitude, user.heading);
         }
+        fitMapToAllUsers(); // 지도 자동 조정
       });
     }
 
