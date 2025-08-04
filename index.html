@@ -184,47 +184,14 @@
     // 접속자 명단 업데이트
     function updateUserList() {
       userListUl.innerHTML = "";
-    
       for (const uid in userData) {
         const li = document.createElement("li");
-    
-        if (uid === myUid) {
-          // 내 닉네임은 수정 가능
-          const input = document.createElement("input");
-          input.type = "text";
-          input.value = myNickname;
-          input.style.width = "80px";
-    
-          const saveBtn = document.createElement("button");
-          saveBtn.textContent = "수정";
-          saveBtn.style.marginLeft = "5px";
-    
-          saveBtn.addEventListener("click", () => {
-            const newName = input.value.trim();
-            if (newName) {
-              myNickname = newName;
-              // Firebase에 닉네임만 업데이트
-              if (userData[uid]) {
-                uploadLocation(uid, userData[uid].lat, userData[uid].lon, myHeading, myNickname);
-              }
-              alert("닉네임이 수정되었습니다.");
-              updateUserList();
-            }
-          });
-    
-          li.appendChild(input);
-          li.appendChild(saveBtn);
-    
-        } else {
-          // 다른 사람은 닉네임만 클릭 가능 (수정 불가)
-          li.textContent = userData[uid].nickname;
-          li.addEventListener("click", () => {
-            map.setView([userData[uid].lat, userData[uid].lon], 15);
-            userMarkers[uid].openPopup();
-            userListDiv.style.display = "none";
-          });
-        }
-    
+        li.textContent = (uid === myUid ? myNickname + " (나)" : userData[uid].nickname);
+        li.addEventListener("click", () => {
+          map.setView([userData[uid].lat, userData[uid].lon], 15);
+          userMarkers[uid].openPopup();
+          userListDiv.style.display = "none";
+        });
         userListUl.appendChild(li);
       }
     }
