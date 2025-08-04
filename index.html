@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치 및 방향 공유 지도 (접속자 명단 포함)</title>
+  <title>실시간 위치 및 방향 공유 지도 (접속자 명단 + 닉네임 수정)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -21,12 +21,13 @@
     #userList {
       position:absolute; top:60px; right:20px; background:white;
       border:1px solid #ccc; border-radius:8px; padding:10px;
-      max-height:200px; overflow-y:auto; min-width:150px;
+      max-height:200px; overflow-y:auto; min-width:200px;
       display:none; z-index:1000;
     }
     #userList ul { list-style:none; padding:0; margin:0; }
-    #userList li { padding:5px; cursor:pointer; border-bottom:1px solid #eee; }
+    #userList li { padding:5px; border-bottom:1px solid #eee; }
     #userList li:hover { background:#f0f0f0; }
+    #userList input { padding:2px; }
   </style>
 </head>
 <body>
@@ -71,7 +72,7 @@
     let myHeading = 0;
     let myUid = null;
     let myNickname = "익명";
-    const userData = {}; // UID별 데이터 저장 (닉네임, 좌표)
+    const userData = {}; // UID별 데이터 저장
 
     // 닉네임 입력창
     const nicknameDiv = document.getElementById("nicknamePrompt");
@@ -98,13 +99,13 @@
                                   ? "block" : "none";
     });
 
-    // 위치 업로드
-    function uploadLocation(userId, lat, lon, heading, nickname) {
+    // 위치 업로드 (하나만 유지)
+    function uploadLocation(userId, lat, lon, heading) {
       return set(ref(db, "locations/" + userId), {
         latitude: lat,
         longitude: lon,
         heading: heading,
-        nickname: nickname,
+        nickname: myNickname,
         timestamp: Date.now()
       });
     }
@@ -117,7 +118,7 @@
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
             showUser(userId, lat, lon, myHeading, myNickname);
-            uploadLocation(userId, lat, lon, myHeading, myNickname);
+            uploadLocation(userId, lat, lon, myHeading);
           },
           (err) => console.error("❌ 위치 추적 실패:", err),
           { enableHighAccuracy: true }
@@ -181,7 +182,7 @@
       updateUserList();
     }
 
-    // 내 닉네임 수정 input은 전역에서 한 번만 만듬
+    // 내 닉네임 수정 input은 전역에서 한 번만 유지
     let myNicknameInput = null;
 
     // 접속자 명단 업데이트
@@ -215,34 +216,22 @@
             li.appendChild(myNicknameInput);
             li.appendChild(saveBtn);
           } else {
+            myNicknameInput.value = myNickname;
             li.appendChild(myNicknameInput);
           }
 
-    } else {
-      li.textContent = userData[uid].nickname;
-      li.addEventListener("click", () => {
-        map.setView([userData[uid].lat, userData[uid].lon], 15);
-        userMarkers[uid].openPopup();
-        userListDiv.style.display = "none";
-      });
+        } else {
+          li.textContent = userData[uid].nickname;
+          li.addEventListener("click", () => {
+            map.setView([userData[uid].lat, userData[uid].lon], 15);
+            userMarkers[uid].openPopup();
+            userListDiv.style.display = "none";
+          });
+        }
+
+        userListUl.appendChild(li);
+      }
     }
-
-    userListUl.appendChild(li);
-  }
-}
-
-// 위치 업로드에서는 닉네임 필드 제외
-function uploadLocation(userId, lat, lon, heading) {
-  return set(ref(db, "locations/" + userId), {
-    latitude: lat,
-    longitude: lon,
-    heading: heading,
-    // nickname은 별도로 관리
-    nickname: myNickname,
-    timestamp: Date.now()
-  });
-}
-
 
     // DB 구독
     function listenAllUsers() {
@@ -287,4 +276,3 @@ function uploadLocation(userId, lat, lon, heading) {
   </script>
 </body>
 </html>
-
