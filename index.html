@@ -2,20 +2,30 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치 및 방향 공유 지도 (디버그 모드)</title>
+  <title>실시간 위치 및 방향 공유 지도 (닉네임 포함)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
     .direction-label { font-size: 14px; color: black; }
+    #nicknamePrompt {
+      position:absolute; top:20px; left:50%; transform:translateX(-50%);
+      background:white; padding:15px; border:1px solid #ccc; border-radius:8px;
+      z-index:1000; text-align:center;
+    }
   </style>
 </head>
 <body>
   <div id="map"></div>
+  <div id="nicknamePrompt">
+    <label>닉네임 입력: <input type="text" id="nicknameInput"></label>
+    <button id="nicknameBtn">확인</button>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
 
     // Firebase 설정
@@ -29,7 +39,6 @@
       measurementId: "G-XLKW5QD56K"
     };
 
-    // Firebase 초기화
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
     const auth = getAuth(app);
@@ -43,23 +52,30 @@
     const userMarkers = {};
     let myHeading = 0;
     let myUid = null;
+    let myNickname = "익명";
 
-    // 연결 상태 확인
-    const connectedRef = ref(db, ".info/connected");
-    onValue(connectedRef, (snap) => {
-      if (snap.val() === true) {
-        console.log("🔗 Firebase DB 연결됨");
+    // 닉네임 입력창
+    const nicknameDiv = document.getElementById("nicknamePrompt");
+    const nicknameInput = document.getElementById("nicknameInput");
+    const nicknameBtn = document.getElementById("nicknameBtn");
+
+    nicknameBtn.addEventListener("click", () => {
+      const val = nicknameInput.value.trim();
+      if (val) {
+        myNickname = val;
+        nicknameDiv.style.display = "none";
       } else {
-        console.log("❌ Firebase DB 연결 안 됨");
+        alert("닉네임을 입력하세요.");
       }
     });
 
     // 위치 업로드
-    function uploadLocation(userId, lat, lon, heading) {
+    function uploadLocation(userId, lat, lon, heading, nickname) {
       return set(ref(db, "locations/" + userId), {
         latitude: lat,
         longitude: lon,
         heading: heading,
+        nickname: nickname,
         timestamp: Date.now()
       }).then(() => {
         console.log(`✅ 내 위치 업로드 완료: ${lat}, ${lon}, heading=${heading}`);
@@ -73,9 +89,8 @@
           (pos) => {
             const lat = pos.coords.latitude;
             const lon = pos.coords.longitude;
-            console.log(`📌 내 위치 갱신: ${lat}, ${lon}`);
-            showUser(userId, lat, lon, myHeading);
-            uploadLocation(userId, lat, lon, myHeading);
+            showUser(userId, lat, lon, myHeading, myNickname);
+            uploadLocation(userId, lat, lon, myHeading, myNickname);
           },
           (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
           { enableHighAccuracy: true }
@@ -108,19 +123,10 @@
     }
 
     // 지도에 사용자 표시
-    function showUser(uid, lat, lon, heading) {
-      if (lat === undefined || lon === undefined) {
-        console.warn(`⚠️ 잘못된 좌표 수신: UID=${uid}, lat=${lat}, lon=${lon}`);
-        return;
-      }
-
+    function showUser(uid, lat, lon, heading, nickname = "익명") {
       const latNum = parseFloat(lat);
       const lonNum = parseFloat(lon);
-
-      if (isNaN(latNum) || isNaN(lonNum)) {
-        console.warn(`⚠️ NaN 좌표 무시: UID=${uid}, lat=${lat}, lon=${lon}`);
-        return;
-      }
+      if (isNaN(latNum) || isNaN(lonNum)) return;
 
       const color = (uid === myUid) ? "red" : "blue";
 
@@ -136,48 +142,44 @@
         iconAnchor: [15, 20]
       });
 
+      const popupContent = `
+        <b>${uid === myUid ? myNickname + " (나)" : nickname}</b><br>
+        위도: ${latNum.toFixed(6)}<br>
+        경도: ${lonNum.toFixed(6)}
+      `;
+
       if (!userMarkers[uid]) {
         userMarkers[uid] = L.marker([latNum, lonNum], { icon: arrowIcon })
           .addTo(map)
-          .bindPopup(`👤 ${uid === myUid ? '나(Myself)' : uid}`);
-        console.log(`➕ 새 사용자 추가됨: UID=${uid}, 위치=${latNum},${lonNum}`);
+          .bindPopup(popupContent);
       } else {
         userMarkers[uid].setLatLng([latNum, lonNum]);
         userMarkers[uid].setIcon(arrowIcon);
-        if (uid !== myUid) {
-          console.log(`📍 팀원 위치 갱신: UID=${uid}, 위치=${latNum},${lonNum}, heading=${heading}`);
-        }
+        userMarkers[uid].bindPopup(popupContent);
       }
     }
 
     // DB 구독
     function listenAllUsers() {
       const locRef = ref(db, "locations");
-      console.log("📡 Firebase DB 구독 시도중...");
       onValue(locRef, (snapshot) => {
-        console.log("✅ DB 구독 성공, 스냅샷 수신");
-
-        const data = snapshot.val();
-        console.log("🟢 snapshot.val():", data);
-
-        if (!data) {
-          console.log("⚠️ 현재 DB에 위치 데이터 없음");
-          return;
-        }
+        const data = snapshot.val() || {};
+        const currentUids = new Set(Object.keys(data));
 
         for (const uid in data) {
           const user = data[uid];
-          console.log("📡 UID:", uid, "원본 데이터:", user);
-
-          if (!user || user.latitude === undefined || user.longitude === undefined) {
-            console.warn("⚠️ 좌표 없음:", uid, user);
-            continue;
-          }
-
-          showUser(uid, user.latitude, user.longitude, user.heading || 0);
+          if (!user || user.latitude === undefined || user.longitude === undefined) continue;
+          showUser(uid, user.latitude, user.longitude, user.heading || 0, user.nickname || "익명");
         }
-      }, (error) => {
-        console.error("❌ DB 구독 실패:", error);
+
+        // 삭제된 사용자 제거
+        for (const uid in userMarkers) {
+          if (!currentUids.has(uid)) {
+            map.removeLayer(userMarkers[uid]);
+            delete userMarkers[uid];
+            console.log(`❌ 사용자 제거됨: UID=${uid}`);
+          }
+        }
       });
     }
 
@@ -186,8 +188,14 @@
       if (user) {
         myUid = user.uid;
         console.log(`✅ 로그인 성공, 내 UID: ${myUid}`);
-        trackLocation(myUid);
-        listenAllUsers();
+        // 닉네임이 입력된 후 위치 추적 시작
+        const checkNickname = setInterval(() => {
+          if (myNickname !== "익명") {
+            clearInterval(checkNickname);
+            trackLocation(myUid);
+            listenAllUsers();
+          }
+        }, 500);
       }
     });
 
