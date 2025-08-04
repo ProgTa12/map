@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치 및 방향 공유 지도 (닉네임 포함)</title>
+  <title>실시간 위치 및 방향 공유 지도 (접속자 명단 포함)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
@@ -13,6 +13,20 @@
       background:white; padding:15px; border:1px solid #ccc; border-radius:8px;
       z-index:1000; text-align:center;
     }
+    #userListToggle {
+      position:absolute; top:20px; right:20px;
+      background:#007bff; color:white; border:none; border-radius:6px;
+      padding:10px 15px; cursor:pointer; z-index:1000;
+    }
+    #userList {
+      position:absolute; top:60px; right:20px; background:white;
+      border:1px solid #ccc; border-radius:8px; padding:10px;
+      max-height:200px; overflow-y:auto; min-width:150px;
+      display:none; z-index:1000;
+    }
+    #userList ul { list-style:none; padding:0; margin:0; }
+    #userList li { padding:5px; cursor:pointer; border-bottom:1px solid #eee; }
+    #userList li:hover { background:#f0f0f0; }
   </style>
 </head>
 <body>
@@ -21,11 +35,15 @@
     <label>닉네임 입력: <input type="text" id="nicknameInput"></label>
     <button id="nicknameBtn">확인</button>
   </div>
+  <button id="userListToggle">접속자</button>
+  <div id="userList">
+    <ul id="userListUl"></ul>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-    import { getDatabase, ref, set, onValue, remove } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+    import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
     import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
 
     // Firebase 설정
@@ -53,6 +71,7 @@
     let myHeading = 0;
     let myUid = null;
     let myNickname = "익명";
+    const userData = {}; // UID별 데이터 저장 (닉네임, 좌표)
 
     // 닉네임 입력창
     const nicknameDiv = document.getElementById("nicknamePrompt");
@@ -69,6 +88,16 @@
       }
     });
 
+    // 접속자 명단
+    const userListToggle = document.getElementById("userListToggle");
+    const userListDiv = document.getElementById("userList");
+    const userListUl = document.getElementById("userListUl");
+
+    userListToggle.addEventListener("click", () => {
+      userListDiv.style.display = (userListDiv.style.display === "none" || !userListDiv.style.display) 
+                                  ? "block" : "none";
+    });
+
     // 위치 업로드
     function uploadLocation(userId, lat, lon, heading, nickname) {
       return set(ref(db, "locations/" + userId), {
@@ -77,9 +106,7 @@
         heading: heading,
         nickname: nickname,
         timestamp: Date.now()
-      }).then(() => {
-        console.log(`✅ 내 위치 업로드 완료: ${lat}, ${lon}, heading=${heading}`);
-      }).catch(err => console.error("❌ DB 업로드 실패:", err));
+      });
     }
 
     // 내 위치 추적
@@ -92,30 +119,24 @@
             showUser(userId, lat, lon, myHeading, myNickname);
             uploadLocation(userId, lat, lon, myHeading, myNickname);
           },
-          (err) => console.error("❌ 위치 추적 실패:", err.code, err.message),
+          (err) => console.error("❌ 위치 추적 실패:", err),
           { enableHighAccuracy: true }
         );
-      } else {
-        console.error("❌ 브라우저에서 위치 정보를 지원하지 않음");
       }
     }
 
     // 기기 방향 감지
     if (window.DeviceOrientationEvent) {
       const handleOrientation = (event) => {
-        if (event.alpha !== null) {
-          myHeading = 360 - event.alpha;
-        }
+        if (event.alpha !== null) myHeading = 360 - event.alpha;
       };
       if (typeof DeviceOrientationEvent.requestPermission === "function") {
         document.body.addEventListener("click", () => {
-          DeviceOrientationEvent.requestPermission()
-            .then((res) => {
-              if (res === "granted") {
-                window.addEventListener("deviceorientationabsolute", handleOrientation, true);
-              }
-            })
-            .catch(console.error);
+          DeviceOrientationEvent.requestPermission().then((res) => {
+            if (res === "granted") {
+              window.addEventListener("deviceorientationabsolute", handleOrientation, true);
+            }
+          }).catch(console.error);
         });
       } else {
         window.addEventListener("deviceorientationabsolute", handleOrientation, true);
@@ -129,15 +150,12 @@
       if (isNaN(latNum) || isNaN(lonNum)) return;
 
       const color = (uid === myUid) ? "red" : "blue";
-
       const arrowIcon = L.divIcon({
         className: "custom-arrow",
-        html: `
-          <div style="text-align:center;">
-            <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
-            <div style="width:12px; height:12px; background:${color}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
-          </div>
-        `,
+        html: `<div style="text-align:center;">
+                 <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
+                 <div style="width:12px; height:12px; background:${color}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
+               </div>`,
         iconSize: [30, 40],
         iconAnchor: [15, 20]
       });
@@ -156,6 +174,25 @@
         userMarkers[uid].setLatLng([latNum, lonNum]);
         userMarkers[uid].setIcon(arrowIcon);
         userMarkers[uid].bindPopup(popupContent);
+      }
+
+      // 사용자 데이터 저장
+      userData[uid] = { lat: latNum, lon: lonNum, nickname: nickname };
+      updateUserList();
+    }
+
+    // 접속자 명단 업데이트
+    function updateUserList() {
+      userListUl.innerHTML = "";
+      for (const uid in userData) {
+        const li = document.createElement("li");
+        li.textContent = (uid === myUid ? myNickname + " (나)" : userData[uid].nickname);
+        li.addEventListener("click", () => {
+          map.setView([userData[uid].lat, userData[uid].lon], 15);
+          userMarkers[uid].openPopup();
+          userListDiv.style.display = "none";
+        });
+        userListUl.appendChild(li);
       }
     }
 
@@ -177,9 +214,10 @@
           if (!currentUids.has(uid)) {
             map.removeLayer(userMarkers[uid]);
             delete userMarkers[uid];
-            console.log(`❌ 사용자 제거됨: UID=${uid}`);
+            delete userData[uid];
           }
         }
+        updateUserList();
       });
     }
 
@@ -187,8 +225,6 @@
     onAuthStateChanged(auth, (user) => {
       if (user) {
         myUid = user.uid;
-        console.log(`✅ 로그인 성공, 내 UID: ${myUid}`);
-        // 닉네임이 입력된 후 위치 추적 시작
         const checkNickname = setInterval(() => {
           if (myNickname !== "익명") {
             clearInterval(checkNickname);
@@ -199,10 +235,7 @@
       }
     });
 
-    // 인증 시작
-    signInAnonymously(auth).catch((err) => {
-      console.error("❌ 로그인 실패:", err);
-    });
+    signInAnonymously(auth).catch((err) => console.error("❌ 로그인 실패:", err));
   </script>
 </body>
 </html>
