@@ -2,10 +2,11 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치 및 방향 공유 지도 (접속자 명단 포함)</title>
+  <title>실시간 위치 및 장소 검색 지도</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
+    body { margin:0; }
     #map { width: 100vw; height: 100vh; }
     .direction-label { font-size: 14px; color: black; }
     #nicknamePrompt {
@@ -28,14 +29,28 @@
     #userList li { padding:5px; cursor:pointer; border-bottom:1px solid #eee; }
     #userList li:hover { background:#f0f0f0; }
     #editNicknameInput { width:100px; margin-top:8px; }
+
+    #placePanel {
+      position:absolute; top:60px; left:20px; background:white;
+      border:1px solid #ccc; border-radius:8px; padding:10px;
+      max-height:300px; overflow-y:auto; width:280px;
+      display:none; z-index:1000;
+    }
+    #placePanel h4 { margin-top:0; font-size:16px; }
+    #placePanel ul { list-style:none; padding:0; margin:0; }
+    #placePanel li { margin-bottom:10px; }
   </style>
 </head>
 <body>
   <div id="map"></div>
+
+  <!-- 닉네임 설정 -->
   <div id="nicknamePrompt">
     <label>닉네임 입력: <input type="text" id="nicknameInput"></label>
     <button id="nicknameBtn">확인</button>
   </div>
+
+  <!-- 접속자 명단 -->
   <button id="userListToggle">접속자</button>
   <div id="userList">
     <ul id="userListUl"></ul>
@@ -43,6 +58,12 @@
       <input type="text" id="editNicknameInput" placeholder="새 닉네임">
       <button id="editNicknameBtn">수정</button>
     </div>
+  </div>
+
+  <!-- 장소 정보 패널 -->
+  <div id="placePanel">
+    <h4>📍 주변 장소</h4>
+    <ul id="placeListUl"></ul>
   </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -60,6 +81,8 @@
       appId: "1:338156458292:web:8380c00a6fbd292cd41561",
       measurementId: "G-XLKW5QD56K"
     };
+
+    const KAKAO_REST_API_KEY = "KAKAO_REST_API_KEY_HERE"; // ✅ 여기에 본인 키 삽입
 
     const app = initializeApp(firebaseConfig);
     const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
@@ -97,8 +120,7 @@
     const editNicknameBtn = document.getElementById("editNicknameBtn");
 
     userListToggle.addEventListener("click", () => {
-      userListDiv.style.display = (userListDiv.style.display === "none" || !userListDiv.style.display) 
-                                  ? "block" : "none";
+      userListDiv.style.display = (userListDiv.style.display === "none" || !userListDiv.style.display) ? "block" : "none";
     });
 
     editNicknameBtn.addEventListener("click", () => {
@@ -170,16 +192,10 @@
         iconAnchor: [15, 20]
       });
 
-      const popupContent = `
-        <b>${uid === myUid ? myNickname + " (나)" : nickname}</b><br>
-        위도: ${latNum.toFixed(6)}<br>
-        경도: ${lonNum.toFixed(6)}
-      `;
+      const popupContent = `<b>${uid === myUid ? myNickname + " (나)" : nickname}</b><br>위도: ${latNum.toFixed(6)}<br>경도: ${lonNum.toFixed(6)}`;
 
       if (!userMarkers[uid]) {
-        userMarkers[uid] = L.marker([latNum, lonNum], { icon: arrowIcon })
-          .addTo(map)
-          .bindPopup(popupContent);
+        userMarkers[uid] = L.marker([latNum, lonNum], { icon: arrowIcon }).addTo(map).bindPopup(popupContent);
       } else {
         userMarkers[uid].setLatLng([latNum, lonNum]);
         userMarkers[uid].setIcon(arrowIcon);
@@ -216,13 +232,11 @@
       onValue(locRef, (snapshot) => {
         const data = snapshot.val() || {};
         const currentUids = new Set(Object.keys(data));
-
         for (const uid in data) {
           const user = data[uid];
           if (!user || user.latitude === undefined || user.longitude === undefined) continue;
           showUser(uid, user.latitude, user.longitude, user.heading || 0, user.nickname || "익명");
         }
-
         for (const uid in userMarkers) {
           if (!currentUids.has(uid)) {
             map.removeLayer(userMarkers[uid]);
@@ -248,6 +262,41 @@
     });
 
     signInAnonymously(auth).catch((err) => console.error("❌ 로그인 실패:", err));
+
+    // 👉 지도 클릭 시 장소 검색
+    const placePanel = document.getElementById("placePanel");
+    const placeListUl = document.getElementById("placeListUl");
+
+    map.on("click", async (e) => {
+      const { lat, lng } = e.latlng;
+      L.marker([lat, lng]).addTo(map).bindPopup("검색중...").openPopup();
+      const places = await searchPlaces(lat, lng);
+      renderPlaceList(places);
+    });
+
+    async function searchPlaces(lat, lng) {
+      const url = `https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`;
+      const res = await fetch(url, {
+        headers: { Authorization: `KakaoAK ${KAKAO_REST_API_KEY}` }
+      });
+      const data = await res.json();
+      return data.documents;
+    }
+
+    function renderPlaceList(places) {
+      placeListUl.innerHTML = "";
+      if (places.length === 0) {
+        placeListUl.innerHTML = "<li>근처 장소 없음</li>";
+      } else {
+        places.forEach(p => {
+          const li = document.createElement("li");
+          li.innerHTML = `<b>${p.place_name}</b><br><small>${p.road_address_name || p.address_name}</small><br><span style="color:gray;">${p.category_name}</span>`;
+          placeListUl.appendChild(li);
+        });
+      }
+      placePanel.style.display = "block";
+    }
+
   </script>
 </body>
 </html>
