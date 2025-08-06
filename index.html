@@ -7,21 +7,24 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
+    #nicknamePrompt, #userListToggle, #userList, #placePanel {
+      z-index: 1000;
+    }
     #nicknamePrompt {
       position:absolute; top:20px; left:50%; transform:translateX(-50%);
       background:white; padding:15px; border:1px solid #ccc; border-radius:8px;
-      z-index:1000; text-align:center;
+      text-align:center;
     }
     #userListToggle {
       position:absolute; top:20px; right:20px;
       background:#007bff; color:white; border:none; border-radius:6px;
-      padding:10px 15px; cursor:pointer; z-index:1000;
+      padding:10px 15px; cursor:pointer;
     }
     #userList {
       position:absolute; top:60px; right:20px; background:white;
       border:1px solid #ccc; border-radius:8px; padding:10px;
       max-height:250px; overflow-y:auto; min-width:170px;
-      display:none; z-index:1000;
+      display:none;
     }
     #userList ul { list-style:none; padding:0; margin:0; }
     #userList li { padding:5px; cursor:pointer; border-bottom:1px solid #eee; }
@@ -40,7 +43,6 @@
       border-radius: 8px;
       padding: 10px;
       font-size: 14px;
-      z-index: 1000;
     }
     .place { margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #eee; }
     .place-title { font-weight: bold; margin-bottom: 4px; }
@@ -268,7 +270,7 @@
 
     signInAnonymously(auth).catch((err) => console.error("❌ 로그인 실패:", err));
 
-    // 클릭한 위치의 마커와 주변 장소 불러오기
+    // 지도 클릭 시 마커 + 주변 장소 표시
     map.on("click", async function (e) {
       const lat = e.latlng.lat;
       const lng = e.latlng.lng;
@@ -283,11 +285,10 @@
       try {
         const res = await fetch(`https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`, {
           headers: {
-            Authorization: "KakaoAK YOUR_KAKAO_REST_API_KEY_HERE"
+            Authorization: "b5321f61696e2bf38cb098797fccedb0"  // ← 여기에 실제 API 키 입력
           }
         });
 
-        if (!res.ok) throw new Error("API 오류");
         const data = await res.json();
 
         if (data.documents.length === 0) {
