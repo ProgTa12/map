@@ -7,9 +7,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
-    #nicknamePrompt, #userListToggle, #userList, #placePanel {
-      z-index: 1000;
-    }
+    #nicknamePrompt, #userListToggle, #userList, #placePanel { z-index: 1000; }
     #nicknamePrompt {
       position:absolute; top:20px; left:50%; transform:translateX(-50%);
       background:white; padding:15px; border:1px solid #ccc; border-radius:8px;
@@ -23,8 +21,7 @@
     #userList {
       position:absolute; top:60px; right:20px; background:white;
       border:1px solid #ccc; border-radius:8px; padding:10px;
-      max-height:250px; overflow-y:auto; min-width:170px;
-      display:none;
+      max-height:250px; overflow-y:auto; min-width:170px; display:none;
     }
     #userList ul { list-style:none; padding:0; margin:0; }
     #userList li { padding:5px; cursor:pointer; border-bottom:1px solid #eee; }
@@ -32,17 +29,9 @@
     #editNicknameInput { width:100px; margin-top:8px; }
 
     #placePanel {
-      position: absolute;
-      top: 60px;
-      left: 10px;
-      width: 320px;
-      max-height: 420px;
-      overflow-y: auto;
-      background: white;
-      border: 1px solid #ccc;
-      border-radius: 8px;
-      padding: 10px;
-      font-size: 14px;
+      position: absolute; top: 60px; left: 10px; width: 320px; max-height: 420px;
+      overflow-y: auto; background: white; border: 1px solid #ccc;
+      border-radius: 8px; padding: 10px; font-size: 14px;
     }
     .place { margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #eee; }
     .place-title { font-weight: bold; margin-bottom: 4px; }
@@ -76,8 +65,7 @@
       projectId: "gps-mapping-397bc",
       storageBucket: "gps-mapping-397bc.appspot.com",
       messagingSenderId: "338156458292",
-      appId: "1:338156458292:web:8380c00a6fbd292cd41561",
-      measurementId: "G-XLKW5QD56K"
+      appId: "1:338156458292:web:8380c00a6fbd292cd41561"
     };
 
     const app = initializeApp(firebaseConfig);
@@ -85,230 +73,166 @@
     const auth = getAuth(app);
 
     const map = L.map('map').setView([36.5, 127.8], 7);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
     const userMarkers = {};
-    let myHeading = 0;
     let myUid = null;
+    let myHeading = 0;
     let myNickname = "익명";
     const userData = {};
     let currentClickMarker = null;
-
     const panel = document.getElementById("placePanel");
-    const nicknameDiv = document.getElementById("nicknamePrompt");
-    const nicknameInput = document.getElementById("nicknameInput");
-    const nicknameBtn = document.getElementById("nicknameBtn");
 
+    // 닉네임 설정
+    const nicknameDiv = document.getElementById("nicknamePrompt");
+    const nicknameBtn = document.getElementById("nicknameBtn");
     nicknameBtn.addEventListener("click", () => {
-      const val = nicknameInput.value.trim();
-      if (val) {
-        myNickname = val;
+      const input = document.getElementById("nicknameInput").value.trim();
+      if (input) {
+        myNickname = input;
         nicknameDiv.style.display = "none";
       } else {
         alert("닉네임을 입력하세요.");
       }
     });
 
-    const userListToggle = document.getElementById("userListToggle");
-    const userListDiv = document.getElementById("userList");
+    // 접속자 목록
     const userListUl = document.getElementById("userListUl");
-    const editNicknameInput = document.getElementById("editNicknameInput");
-    const editNicknameBtn = document.getElementById("editNicknameBtn");
+    document.getElementById("userListToggle").onclick = () => {
+      const ul = document.getElementById("userList");
+      ul.style.display = ul.style.display === "block" ? "none" : "block";
+    };
 
-    userListToggle.addEventListener("click", () => {
-      userListDiv.style.display = (userListDiv.style.display === "none" || !userListDiv.style.display) 
-                                  ? "block" : "none";
-    });
-
-    editNicknameBtn.addEventListener("click", () => {
-      const newName = editNicknameInput.value.trim();
-      if (newName) {
-        updateNickname(newName);
-        editNicknameInput.value = "";
-        alert("닉네임이 수정되었습니다.");
-      } else {
-        alert("닉네임을 입력하세요.");
+    document.getElementById("editNicknameBtn").onclick = () => {
+      const newNick = document.getElementById("editNicknameInput").value.trim();
+      if (newNick) {
+        myNickname = newNick;
+        set(ref(db, "locations/" + myUid + "/nickname"), newNick);
+        alert("닉네임 수정됨");
       }
-    });
+    };
 
-    function uploadLocation(userId, lat, lon, heading) {
-      return set(ref(db, "locations/" + userId), {
+    function uploadLocation(uid, lat, lng, heading) {
+      set(ref(db, "locations/" + uid), {
         latitude: lat,
-        longitude: lon,
+        longitude: lng,
         heading: heading,
         nickname: myNickname,
         timestamp: Date.now()
       });
     }
 
-    function trackLocation(userId) {
-      if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(
-          (pos) => {
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
-            showUser(userId, lat, lon, myHeading, myNickname);
-            uploadLocation(userId, lat, lon, myHeading);
-          },
-          (err) => console.error("❌ 위치 추적 실패:", err),
-          { enableHighAccuracy: true }
-        );
-      }
-    }
-
-    if (window.DeviceOrientationEvent) {
-      const handleOrientation = (event) => {
-        if (event.alpha !== null) myHeading = 360 - event.alpha;
-      };
-      if (typeof DeviceOrientationEvent.requestPermission === "function") {
-        document.body.addEventListener("click", () => {
-          DeviceOrientationEvent.requestPermission().then((res) => {
-            if (res === "granted") {
-              window.addEventListener("deviceorientationabsolute", handleOrientation, true);
-            }
-          }).catch(console.error);
-        });
-      } else {
-        window.addEventListener("deviceorientationabsolute", handleOrientation, true);
-      }
-    }
-
-    function showUser(uid, lat, lon, heading, nickname = "익명") {
-      const latNum = parseFloat(lat);
-      const lonNum = parseFloat(lon);
-      if (isNaN(latNum) || isNaN(lonNum)) return;
-
-      const color = (uid === myUid) ? "red" : "blue";
-      const arrowIcon = L.divIcon({
-        className: "custom-arrow",
+    function showUser(uid, lat, lng, heading, nickname = "익명") {
+      const icon = L.divIcon({
+        className: "custom-icon",
         html: `<div style="text-align:center;">
-                 <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
-                 <div style="width:12px; height:12px; background:${color}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
-               </div>`,
+          <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
+          <div style="width:12px; height:12px; background:${uid === myUid ? 'red' : 'blue'}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
+        </div>`,
         iconSize: [30, 40],
         iconAnchor: [15, 20]
       });
 
-      const popupContent = `
-        <b>${uid === myUid ? myNickname + " (나)" : nickname}</b><br>
-        위도: ${latNum.toFixed(6)}<br>
-        경도: ${lonNum.toFixed(6)}
-      `;
+      const popup = `<b>${uid === myUid ? nickname + " (나)" : nickname}</b><br>위도: ${lat.toFixed(6)}<br>경도: ${lng.toFixed(6)}`;
 
       if (!userMarkers[uid]) {
-        userMarkers[uid] = L.marker([latNum, lonNum], { icon: arrowIcon })
-          .addTo(map)
-          .bindPopup(popupContent);
+        userMarkers[uid] = L.marker([lat, lng], { icon }).addTo(map).bindPopup(popup);
       } else {
-        userMarkers[uid].setLatLng([latNum, lonNum]);
-        userMarkers[uid].setIcon(arrowIcon);
-        userMarkers[uid].bindPopup(popupContent);
+        userMarkers[uid].setLatLng([lat, lng]);
+        userMarkers[uid].setIcon(icon);
+        userMarkers[uid].bindPopup(popup);
       }
 
-      userData[uid] = { lat: latNum, lon: lonNum, nickname: nickname };
-      updateUserList();
+      userData[uid] = { lat, lng, nickname };
+      renderUserList();
     }
 
-    function updateUserList() {
+    function renderUserList() {
       userListUl.innerHTML = "";
       for (const uid in userData) {
         const li = document.createElement("li");
-        li.textContent = (uid === myUid ? myNickname + " (나)" : userData[uid].nickname);
-        li.addEventListener("click", () => {
-          map.setView([userData[uid].lat, userData[uid].lon], 15);
+        li.textContent = uid === myUid ? `${myNickname} (나)` : userData[uid].nickname;
+        li.onclick = () => {
+          const { lat, lng } = userData[uid];
+          map.setView([lat, lng], 15);
           userMarkers[uid].openPopup();
-          userListDiv.style.display = "none";
-        });
+        };
         userListUl.appendChild(li);
       }
     }
 
-    function updateNickname(newName) {
-      myNickname = newName;
-      const nickRef = ref(db, "locations/" + myUid + "/nickname");
-      set(nickRef, newName).catch(err => console.error("닉네임 업데이트 실패:", err));
-      updateUserList();
+    function trackMyLocation(uid) {
+      navigator.geolocation.watchPosition(pos => {
+        const { latitude, longitude } = pos.coords;
+        showUser(uid, latitude, longitude, myHeading, myNickname);
+        uploadLocation(uid, latitude, longitude, myHeading);
+      }, console.error, { enableHighAccuracy: true });
     }
 
     function listenAllUsers() {
-      const locRef = ref(db, "locations");
-      onValue(locRef, (snapshot) => {
+      onValue(ref(db, "locations"), snapshot => {
         const data = snapshot.val() || {};
-        const currentUids = new Set(Object.keys(data));
-
         for (const uid in data) {
-          const user = data[uid];
-          if (!user || user.latitude === undefined || user.longitude === undefined) continue;
-          showUser(uid, user.latitude, user.longitude, user.heading || 0, user.nickname || "익명");
-        }
-
-        for (const uid in userMarkers) {
-          if (!currentUids.has(uid)) {
-            map.removeLayer(userMarkers[uid]);
-            delete userMarkers[uid];
-            delete userData[uid];
+          const u = data[uid];
+          if (u && u.latitude !== undefined && u.longitude !== undefined) {
+            showUser(uid, u.latitude, u.longitude, u.heading || 0, u.nickname || "익명");
           }
         }
-        updateUserList();
       });
     }
 
-    onAuthStateChanged(auth, (user) => {
+    onAuthStateChanged(auth, user => {
       if (user) {
         myUid = user.uid;
-        const checkNickname = setInterval(() => {
+        const wait = setInterval(() => {
           if (myNickname !== "익명") {
-            clearInterval(checkNickname);
-            trackLocation(myUid);
+            clearInterval(wait);
+            trackMyLocation(myUid);
             listenAllUsers();
           }
         }, 500);
       }
     });
 
-    signInAnonymously(auth).catch((err) => console.error("❌ 로그인 실패:", err));
+    signInAnonymously(auth);
 
-    // 지도 클릭 시 마커 + 주변 장소 표시
-    map.on("click", async function (e) {
-      const lat = e.latlng.lat;
-      const lng = e.latlng.lng;
+    // 지도 클릭 → 주변 장소 검색
+    map.on("click", async e => {
+      const lat = e.latlng.lat, lng = e.latlng.lng;
 
-      if (currentClickMarker) {
-        map.removeLayer(currentClickMarker);
-      }
-
+      // 이전 마커 제거
+      if (currentClickMarker) map.removeLayer(currentClickMarker);
       currentClickMarker = L.marker([lat, lng]).addTo(map).bindPopup("📍 선택한 위치").openPopup();
+
       panel.innerHTML = "🔎 장소를 불러오는 중...";
 
       try {
         const res = await fetch(`https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`, {
           headers: {
-            Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0"  // ← 여기에 실제 API 키 입력
+            Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0"  // ← 여기에 키 입력
           }
         });
 
+        if (!res.ok) throw new Error("API 호출 실패");
+
         const data = await res.json();
 
-        if (data.documents.length === 0) {
+        if (!data.documents || data.documents.length === 0) {
           panel.innerHTML = "⚠️ 주변 음식점이 없습니다.";
         } else {
-          panel.innerHTML = "<b>🍱 주변 음식점</b><br><br>" + data.documents.map(place => `
+          panel.innerHTML = "<b>🍱 주변 음식점</b><br><br>" + data.documents.map(p => `
             <div class="place">
-              <div class="place-title">${place.place_name}</div>
-              <div>${place.road_address_name || place.address_name}</div>
-              <div>${place.category_name}</div>
+              <div class="place-title">${p.place_name}</div>
+              <div>${p.road_address_name || p.address_name}</div>
+              <div>${p.category_name}</div>
             </div>
           `).join("");
         }
       } catch (err) {
+        console.error("❌ 장소 검색 오류:", err);
         panel.innerHTML = "❌ 장소 정보를 불러오는 데 실패했습니다.";
-        console.error(err);
       }
     });
   </script>
 </body>
 </html>
-
-
