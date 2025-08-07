@@ -2,12 +2,14 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>실시간 위치 및 주변 장소 검색</title>
+  <title>실시간 위치 및 주변 장소 검색 + 위험지역 설정</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
-    #nicknamePrompt, #userListToggle, #userList, #placePanel { z-index: 1000; }
+    #nicknamePrompt, #userListToggle, #userList, #placePanel,
+    #dangerZoneBtn, #dangerForm, #dangerListPanel { z-index: 1000; }
+
     #nicknamePrompt {
       position:absolute; top:20px; left:50%; transform:translateX(-50%);
       background:white; padding:15px; border:1px solid #ccc; border-radius:8px;
@@ -35,14 +37,47 @@
     }
     .place { margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #eee; }
     .place-title { font-weight: bold; margin-bottom: 4px; }
+
+    #dangerZoneBtn {
+      position:absolute; top:60px; right:120px;
+      background:red; color:white; border:none; padding:8px 12px;
+      border-radius:6px; display:none;
+    }
+
+    #dangerForm {
+      position:absolute; top:100px; right:20px; background:white; padding:10px;
+      border:1px solid #ccc; border-radius:8px; display:none;
+    }
+
+    #dangerListPanel {
+      position:absolute; bottom:20px; right:20px; background:white;
+      padding:10px; border:1px solid #ccc; border-radius:8px;
+      width:280px; max-height:300px; overflow:auto;
+    }
+
+    .danger-circle {
+      fill: url(#diagonalHatch);
+      stroke: red;
+      stroke-width: 2;
+      fill-opacity: 0.3;
+    }
   </style>
+  <svg width="0" height="0">
+    <defs>
+      <pattern id="diagonalHatch" patternUnits="userSpaceOnUse" width="8" height="8">
+        <path d="M0,0 l8,8 M-1,1 l2,-2 M7,9 l2,-2" stroke="red" stroke-width="1"/>
+      </pattern>
+    </defs>
+  </svg>
 </head>
 <body>
   <div id="map"></div>
+
   <div id="nicknamePrompt">
     <label>닉네임 입력: <input type="text" id="nicknameInput"></label>
     <button id="nicknameBtn">확인</button>
   </div>
+
   <button id="userListToggle">접속자</button>
   <div id="userList">
     <ul id="userListUl"></ul>
@@ -51,7 +86,20 @@
       <button id="editNicknameBtn">수정</button>
     </div>
   </div>
+
   <div id="placePanel">🗺 지도에서 위치를 클릭하면 주변 장소가 표시됩니다.</div>
+
+  <button id="dangerZoneBtn">위험지역 설정</button>
+  <div id="dangerForm">
+    <label>이름: <input type="text" id="dangerName"></label><br>
+    <label>반경(m): <input type="number" id="dangerRadius" value="200"></label><br>
+    <button id="dangerSubmit">등록</button>
+  </div>
+
+  <div id="dangerListPanel">
+    <b>🚨 위험지역 리스트</b>
+    <ul id="dangerList" style="list-style:none; padding:0; margin-top:10px;"></ul>
+  </div>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script type="module">
@@ -83,21 +131,23 @@
     let currentClickMarker = null;
     const panel = document.getElementById("placePanel");
 
+    // 위험지역 관련
+    let selectedDangerLatLng = null;
+    let dangerZones = [];
+    const dangerLayerGroup = L.layerGroup().addTo(map);
+
     // 닉네임 설정
-    const nicknameDiv = document.getElementById("nicknamePrompt");
-    const nicknameBtn = document.getElementById("nicknameBtn");
-    nicknameBtn.addEventListener("click", () => {
+    document.getElementById("nicknameBtn").onclick = () => {
       const input = document.getElementById("nicknameInput").value.trim();
       if (input) {
         myNickname = input;
-        nicknameDiv.style.display = "none";
+        document.getElementById("nicknamePrompt").style.display = "none";
       } else {
         alert("닉네임을 입력하세요.");
       }
-    });
+    };
 
-    // 접속자 목록
-    const userListUl = document.getElementById("userListUl");
+    // 접속자 목록 표시
     document.getElementById("userListToggle").onclick = () => {
       const ul = document.getElementById("userList");
       ul.style.display = ul.style.display === "block" ? "none" : "block";
@@ -148,6 +198,7 @@
     }
 
     function renderUserList() {
+      const userListUl = document.getElementById("userListUl");
       userListUl.innerHTML = "";
       for (const uid in userData) {
         const li = document.createElement("li");
@@ -196,11 +247,12 @@
 
     signInAnonymously(auth);
 
-    // 지도 클릭 → 주변 장소 검색
+    // 지도 클릭: 장소 검색 + 마커 표시 + 위험지역 위치 선택
     map.on("click", async e => {
       const lat = e.latlng.lat, lng = e.latlng.lng;
+      selectedDangerLatLng = e.latlng;
+      document.getElementById("dangerZoneBtn").style.display = "block";
 
-      // 이전 마커 제거
       if (currentClickMarker) map.removeLayer(currentClickMarker);
       currentClickMarker = L.marker([lat, lng]).addTo(map).bindPopup("📍 선택한 위치").openPopup();
 
@@ -208,15 +260,11 @@
 
       try {
         const res = await fetch(`https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`, {
-          headers: {
-            Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0"  // ← 여기에 키 입력
-          }
+          headers: { Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0" }
         });
-
         if (!res.ok) throw new Error("API 호출 실패");
 
         const data = await res.json();
-
         if (!data.documents || data.documents.length === 0) {
           panel.innerHTML = "⚠️ 주변 음식점이 없습니다.";
         } else {
@@ -225,14 +273,82 @@
               <div class="place-title">${p.place_name}</div>
               <div>${p.road_address_name || p.address_name}</div>
               <div>${p.category_name}</div>
-            </div>
-          `).join("");
+            </div>`).join("");
         }
       } catch (err) {
         console.error("❌ 장소 검색 오류:", err);
         panel.innerHTML = "❌ 장소 정보를 불러오는 데 실패했습니다.";
       }
     });
+
+    // 위험지역 설정 UI 동작
+    document.getElementById("dangerZoneBtn").onclick = () => {
+      document.getElementById("dangerForm").style.display = "block";
+    };
+
+    document.getElementById("dangerSubmit").onclick = () => {
+      const name = document.getElementById("dangerName").value.trim();
+      const radius = parseInt(document.getElementById("dangerRadius").value);
+      if (!name || isNaN(radius)) return alert("이름과 반경을 입력하세요.");
+      const zone = {
+        id: Date.now(),
+        name,
+        radius,
+        latlng: selectedDangerLatLng
+      };
+      dangerZones.push(zone);
+      drawDangerZone(zone);
+      updateDangerList();
+      document.getElementById("dangerName").value = "";
+      document.getElementById("dangerRadius").value = 200;
+      document.getElementById("dangerForm").style.display = "none";
+      document.getElementById("dangerZoneBtn").style.display = "none";
+    };
+
+    function drawDangerZone(zone) {
+      const circle = L.circle(zone.latlng, {
+        radius: zone.radius,
+        className: "danger-circle"
+      }).bindPopup(`🚨 ${zone.name}<br>${zone.latlng.lat.toFixed(5)}, ${zone.latlng.lng.toFixed(5)}`);
+      dangerLayerGroup.addLayer(circle);
+      zone._layer = circle;
+    }
+
+    function updateDangerList() {
+      const ul = document.getElementById("dangerList");
+      ul.innerHTML = "";
+      dangerZones.forEach(zone => {
+        const li = document.createElement("li");
+        li.innerHTML = `
+          <b>${zone.name}</b><br>
+          (${zone.latlng.lat.toFixed(5)}, ${zone.latlng.lng.toFixed(5)})<br>
+          반경: ${zone.radius}m<br>
+          <button onclick="editDanger(${zone.id})">수정</button>
+          <button onclick="deleteDanger(${zone.id})">삭제</button>
+        `;
+        li.style.marginBottom = "8px";
+        ul.appendChild(li);
+      });
+    }
+
+    window.deleteDanger = id => {
+      const idx = dangerZones.findIndex(z => z.id === id);
+      if (idx !== -1) {
+        dangerLayerGroup.removeLayer(dangerZones[idx]._layer);
+        dangerZones.splice(idx, 1);
+        updateDangerList();
+      }
+    };
+
+    window.editDanger = id => {
+      const zone = dangerZones.find(z => z.id === id);
+      if (!zone) return;
+      document.getElementById("dangerName").value = zone.name;
+      document.getElementById("dangerRadius").value = zone.radius;
+      document.getElementById("dangerForm").style.display = "block";
+      selectedDangerLatLng = zone.latlng;
+      deleteDanger(id);
+    };
   </script>
 </body>
 </html>
