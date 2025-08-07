@@ -7,8 +7,11 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <style>
     #map { width: 100vw; height: 100vh; }
+
     #nicknamePrompt, #userListToggle, #userList, #placePanel,
-    #dangerForm, #dangerListWrapper, #dangerZoneBtn { z-index: 1000; }
+    #dangerZoneBtn, #dangerForm, #dangerListWrapper {
+      z-index: 1000;
+    }
 
     #nicknamePrompt {
       position:absolute; top:20px; left:50%; transform:translateX(-50%);
@@ -28,6 +31,12 @@
       max-height:250px; overflow-y:auto; min-width:170px; display:none;
     }
 
+    #userList ul { list-style:none; padding:0; margin:0; }
+    #userList li { padding:5px; cursor:pointer; border-bottom:1px solid #eee; }
+    #userList li:hover { background:#f0f0f0; }
+
+    #editNicknameInput { width:100px; margin-top:8px; }
+
     #placePanel {
       position: absolute; top: 60px; left: 10px;
       width: 320px; max-height: 420px;
@@ -44,372 +53,359 @@
     .place { margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #eee; }
     .place-title { font-weight: bold; margin-bottom: 4px; }
 
+    #dangerZoneBtn {
+      position: absolute; bottom: 20px; right: 20px;
+      background: red; color: white; border: none;
+      padding: 10px 15px; border-radius: 6px;
+      font-weight: bold;
+    }
+
     #dangerForm {
-      position:absolute; top:100px; right:20px; background:white; padding:10px;
+      position:absolute; bottom:70px; right:20px; background:white; padding:10px;
       border:1px solid #ccc; border-radius:8px; display:none;
     }
 
     #dangerListWrapper {
-      position:absolute; bottom:20px; right:20px; background:white;
+      position:absolute; bottom:20px; left:20px; background:white;
       padding:10px; border:1px solid #ccc; border-radius:8px;
-      width:280px; max-height:300px; overflow:auto;
+      width:280px; max-height:300px; overflow:auto; display: none;
+    }
+
+    #dangerListToggle {
+      cursor: pointer; font-weight: bold;
+      padding: 5px;
     }
 
     #dangerListPanel {
-      display: none;
+      margin-top: 10px;
     }
 
-    .danger-header {
-      display: flex; justify-content: space-between; align-items: center;
-    }
-
-    .danger-header button {
-      border: none; background: none; font-size: 16px; cursor: pointer;
-    }
-
-    #dangerToggle {
-      position: absolute; bottom:20px; right:320px;
-      background:#dc3545; color:white; border:none; padding:8px 12px;
-      border-radius:6px; font-weight:bold; cursor:pointer;
-    }
-
-    #dangerZoneBtn {
-      position:absolute; bottom:20px; right:20px;
-      background:#007bff; color:white; border:none; padding:8px 12px;
-      border-radius:6px; font-weight:bold; cursor:pointer;
+    .danger-circle {
+      fill: url(#diagonalHatch);
+      stroke: red;
+      stroke-width: 2;
+      fill-opacity: 0.3;
     }
   </style>
+  <svg width="0" height="0">
+    <defs>
+      <pattern id="diagonalHatch" patternUnits="userSpaceOnUse" width="8" height="8">
+        <path d="M0,0 l8,8 M-1,1 l2,-2 M7,9 l2,-2" stroke="red" stroke-width="1"/>
+      </pattern>
+    </defs>
+  </svg>
 </head>
 <body>
-<div id="map"></div>
+  <div id="map"></div>
 
-<!-- 닉네임 입력 -->
-<div id="nicknamePrompt">
-  <label>닉네임 입력: <input type="text" id="nicknameInput"></label>
-  <button id="nicknameBtn">확인</button>
-</div>
-
-<!-- 접속자 리스트 -->
-<button id="userListToggle">접속자</button>
-<div id="userList">
-  <ul id="userListUl"></ul>
-  <div style="margin-top:10px; text-align:center;">
-    <input type="text" id="editNicknameInput" placeholder="새 닉네임">
-    <button id="editNicknameBtn">수정</button>
+  <div id="nicknamePrompt">
+    <label>닉네임 입력: <input type="text" id="nicknameInput"></label>
+    <button id="nicknameBtn">확인</button>
   </div>
-</div>
 
-<!-- 장소 검색 결과 -->
-<div id="placePanel">
-  <button id="placeCloseBtn">❌</button>
-  <div id="placeContent"></div>
-</div>
-
-<!-- 위험지역 토글 버튼 -->
-<button id="dangerToggle">📍 위험지역 리스트</button>
-
-<!-- 위험지역 설정 버튼 -->
-<button id="dangerZoneBtn">위험지역 설정</button>
-
-<!-- 위험지역 리스트 패널 -->
-<div id="dangerListWrapper">
-  <div id="dangerListPanel">
-    <div class="danger-header">
-      <b>📍 위험지역 목록</b>
-      <button id="dangerCloseBtn">❌</button>
+  <button id="userListToggle">접속자</button>
+  <div id="userList">
+    <ul id="userListUl"></ul>
+    <div style="margin-top:10px; text-align:center;">
+      <input type="text" id="editNicknameInput" placeholder="새 닉네임">
+      <button id="editNicknameBtn">수정</button>
     </div>
-    <ul id="dangerList" style="padding-left:16px;"></ul>
   </div>
-</div>
+
+  <div id="placePanel">
+    <button id="placeCloseBtn">❌</button>
+    <div id="placeContent"></div>
+  </div>
+
+  <div id="dangerListWrapper">
+    <div id="dangerListToggle">📍 위험지역 리스트 보기</div>
+    <div id="dangerListPanel" style="display: none;">
+      <div style="text-align: right;"><button onclick="hideDangerList()">❌</button></div>
+      <ul id="dangerList" style="padding-left:16px;"></ul>
+    </div>
+  </div>
+
+  <button id="dangerZoneBtn">위험지역 설정</button>
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script type="module">
-  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
-  import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
-  import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
+import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
+import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
 
-  const firebaseConfig = {
-    apiKey: "AIzaSyBvLnMA7jF-1AoDQlgLdEDKFDyWk4N29mY",
-    authDomain: "gps-mapping-397bc.firebaseapp.com",
-    projectId: "gps-mapping-397bc",
-    storageBucket: "gps-mapping-397bc.appspot.com",
-    messagingSenderId: "338156458292",
-    appId: "1:338156458292:web:8380c00a6fbd292cd41561"
-  };
+const firebaseConfig = {
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "XXXXXX",
+  appId: "XXXXXXXX"
+};
 
-  const app = initializeApp(firebaseConfig);
-  const db = getDatabase(app, "https://gps-mapping-397bc-default-rtdb.asia-southeast1.firebasedatabase.app");
-  const auth = getAuth(app);
+const app = initializeApp(firebaseConfig);
+const db = getDatabase(app);
+const auth = getAuth(app);
 
-  const map = L.map('map').setView([36.5, 127.8], 7);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const map = L.map('map').setView([36.5, 127.8], 7);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-  const userMarkers = {};
-  let myUid = null;
-  let myNickname = "익명";
-  let myHeading = 0;
-  const userData = {};
-  let currentClickMarker = null;
-  let selectedLatLng = null;
+let myUid = null;
+let myNickname = "익명";
+let myHeading = 0;
+const userMarkers = {};
+const userData = {};
+let selectedLatLng = null;
+let currentClickMarker = null;
+
+const nicknameDiv = document.getElementById("nicknamePrompt");
+const nicknameBtn = document.getElementById("nicknameBtn");
+nicknameBtn.onclick = () => {
+  const val = document.getElementById("nicknameInput").value.trim();
+  if (val) {
+    myNickname = val;
+    nicknameDiv.style.display = "none";
+  } else {
+    alert("닉네임을 입력하세요.");
+  }
+};
+
+document.getElementById("userListToggle").onclick = () => {
+  const userList = document.getElementById("userList");
+  userList.style.display = userList.style.display === "block" ? "none" : "block";
+};
+
+document.getElementById("editNicknameBtn").onclick = () => {
+  const newNick = document.getElementById("editNicknameInput").value.trim();
+  if (newNick) {
+    myNickname = newNick;
+    set(ref(db, "locations/" + myUid + "/nickname"), newNick);
+    alert("닉네임 수정됨");
+  }
+};
+
+function uploadLocation(uid, lat, lng, heading) {
+  set(ref(db, "locations/" + uid), {
+    latitude: lat,
+    longitude: lng,
+    heading: heading,
+    nickname: myNickname,
+    timestamp: Date.now()
+  });
+}
+
+function showUser(uid, lat, lng, heading, nickname = "익명") {
+  const icon = L.divIcon({
+    className: "custom-icon",
+    html: `<div style="text-align:center;">
+      <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
+      <div style="width:12px; height:12px; background:${uid === myUid ? 'red' : 'blue'}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
+    </div>`,
+    iconSize: [30, 40],
+    iconAnchor: [15, 20]
+  });
+
+  const popup = `<b>${uid === myUid ? nickname + " (나)" : nickname}</b><br>위도: ${lat.toFixed(6)}<br>경도: ${lng.toFixed(6)}`;
+
+  if (!userMarkers[uid]) {
+    userMarkers[uid] = L.marker([lat, lng], { icon }).addTo(map).bindPopup(popup);
+  } else {
+    userMarkers[uid].setLatLng([lat, lng]);
+    userMarkers[uid].setIcon(icon);
+    userMarkers[uid].bindPopup(popup);
+  }
+
+  userData[uid] = { lat, lng, nickname };
+  renderUserList();
+}
+
+function renderUserList() {
+  const ul = document.getElementById("userListUl");
+  ul.innerHTML = "";
+  for (const uid in userData) {
+    const li = document.createElement("li");
+    li.textContent = uid === myUid ? `${myNickname} (나)` : userData[uid].nickname;
+    li.onclick = () => {
+      const { lat, lng } = userData[uid];
+      map.setView([lat, lng], 15);
+      userMarkers[uid].openPopup();
+    };
+    ul.appendChild(li);
+  }
+}
+
+  function trackMyLocation(uid) {
+  navigator.geolocation.watchPosition(pos => {
+    const { latitude, longitude } = pos.coords;
+    showUser(uid, latitude, longitude, myHeading, myNickname);
+    uploadLocation(uid, latitude, longitude, myHeading);
+    checkDangerZones(latitude, longitude);
+  }, console.error, { enableHighAccuracy: true });
+}
+
+function listenAllUsers() {
+  onValue(ref(db, "locations"), snapshot => {
+    const data = snapshot.val() || {};
+    for (const uid in data) {
+      const u = data[uid];
+      if (u && u.latitude && u.longitude) {
+        showUser(uid, u.latitude, u.longitude, u.heading || 0, u.nickname || "익명");
+      }
+    }
+  });
+}
+
+onAuthStateChanged(auth, user => {
+  if (user) {
+    myUid = user.uid;
+    const wait = setInterval(() => {
+      if (myNickname !== "익명") {
+        clearInterval(wait);
+        trackMyLocation(myUid);
+        listenAllUsers();
+      }
+    }, 500);
+  }
+});
+signInAnonymously(auth);
+
+// Kakao 장소 검색
+map.on("click", async e => {
+  const lat = e.latlng.lat, lng = e.latlng.lng;
+  selectedLatLng = e.latlng;
+
+  if (currentClickMarker) map.removeLayer(currentClickMarker);
+  currentClickMarker = L.marker([lat, lng]).addTo(map).bindPopup("📍 선택한 위치").openPopup();
 
   const panel = document.getElementById("placePanel");
   const placeContent = document.getElementById("placeContent");
-  document.getElementById("placeCloseBtn").onclick = () => panel.style.display = "none";
+  panel.style.display = "block";
+  placeContent.innerHTML = "🔎 장소를 불러오는 중...";
 
-  const nicknameDiv = document.getElementById("nicknamePrompt");
-  const nicknameBtn = document.getElementById("nicknameBtn");
-  nicknameBtn.addEventListener("click", () => {
-    const input = document.getElementById("nicknameInput").value.trim();
-    if (input) {
-      myNickname = input;
-      nicknameDiv.style.display = "none";
+  try {
+    const res = await fetch(`https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`, {
+      headers: { Authorization: "KakaoAK YOUR_KAKAO_REST_API_KEY" }
+    });
+    const data = await res.json();
+
+    if (!data.documents || data.documents.length === 0) {
+      placeContent.innerHTML = "⚠️ 주변 음식점이 없습니다.";
     } else {
-      alert("닉네임을 입력하세요.");
+      placeContent.innerHTML = "<b>🍱 주변 음식점</b><br><br>" + data.documents.map(p => `
+        <div class="place">
+          <div class="place-title">${p.place_name}</div>
+          <div>${p.road_address_name || p.address_name}</div>
+          <div>${p.category_name}</div>
+        </div>`).join("");
     }
-  });
-
-  document.getElementById("userListToggle").onclick = () => {
-    const ul = document.getElementById("userList");
-    ul.style.display = ul.style.display === "block" ? "none" : "block";
-  };
-
-  document.getElementById("editNicknameBtn").onclick = () => {
-    const newNick = document.getElementById("editNicknameInput").value.trim();
-    if (newNick) {
-      myNickname = newNick;
-      set(ref(db, "locations/" + myUid + "/nickname"), newNick);
-      alert("닉네임 수정됨");
-    }
-  };
-
-  function uploadLocation(uid, lat, lng, heading) {
-    set(ref(db, "locations/" + uid), {
-      latitude: lat,
-      longitude: lng,
-      heading: heading,
-      nickname: myNickname,
-      timestamp: Date.now()
-    });
+  } catch (err) {
+    console.error("❌ 장소 검색 오류:", err);
+    placeContent.innerHTML = "❌ 장소 정보를 불러오는 데 실패했습니다.";
   }
+});
 
-  function showUser(uid, lat, lng, heading, nickname = "익명") {
-    const icon = L.divIcon({
-      className: "custom-icon",
-      html: `<div style="text-align:center;">
-        <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
-        <div style="width:12px; height:12px; background:${uid === myUid ? 'red' : 'blue'}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
-      </div>`,
-      iconSize: [30, 40],
-      iconAnchor: [15, 20]
-    });
+// 위험지역 로직
+const dangerZones = [];
+const dangerOverlays = [];
 
-    const popup = `<b>${uid === myUid ? nickname + " (나)" : nickname}</b><br>위도: ${lat.toFixed(6)}<br>경도: ${lng.toFixed(6)}`;
-    if (!userMarkers[uid]) {
-      userMarkers[uid] = L.marker([lat, lng], { icon }).addTo(map).bindPopup(popup);
-    } else {
-      userMarkers[uid].setLatLng([lat, lng]);
-      userMarkers[uid].setIcon(icon);
-      userMarkers[uid].bindPopup(popup);
-    }
-    userData[uid] = { lat, lng, nickname };
-    renderUserList();
-  }
+document.getElementById("dangerZoneBtn").onclick = () => {
+  if (!selectedLatLng) return alert("먼저 마커를 지도에 찍어주세요.");
+  document.getElementById("dangerForm").style.display = "block";
+};
 
-  function renderUserList() {
-    const ul = document.getElementById("userListUl");
-    ul.innerHTML = "";
-    for (const uid in userData) {
-      const li = document.createElement("li");
-      li.textContent = uid === myUid ? `${myNickname} (나)` : userData[uid].nickname;
-      li.onclick = () => {
-        const { lat, lng } = userData[uid];
-        map.setView([lat, lng], 15);
-        userMarkers[uid].openPopup();
-      };
-      ul.appendChild(li);
-    }
-  }
+document.getElementById("addDangerBtn").onclick = () => {
+  const name = document.getElementById("dangerName").value.trim();
+  const radius = parseInt(document.getElementById("dangerRadius").value);
+  if (!name || !selectedLatLng) return;
 
-  function trackMyLocation(uid) {
-    navigator.geolocation.watchPosition(pos => {
-      const { latitude, longitude } = pos.coords;
-      showUser(uid, latitude, longitude, myHeading, myNickname);
-      uploadLocation(uid, latitude, longitude, myHeading);
-      checkDangerZones(latitude, longitude);
-    }, console.error, { enableHighAccuracy: true });
-  }
+  const lat = selectedLatLng.lat;
+  const lng = selectedLatLng.lng;
 
-  function listenAllUsers() {
-    onValue(ref(db, "locations"), snapshot => {
-      const data = snapshot.val() || {};
-      for (const uid in data) {
-        const u = data[uid];
-        if (u && u.latitude !== undefined && u.longitude !== undefined) {
-          showUser(uid, u.latitude, u.longitude, u.heading || 0, u.nickname || "익명");
-        }
-      }
-    });
-  }
+  const circle = L.circle([lat, lng], {
+    radius,
+    color: "red",
+    fillColor: "#f88",
+    fillOpacity: 0.4,
+    dashArray: "4,6"
+  }).addTo(map);
 
-  onAuthStateChanged(auth, user => {
-    if (user) {
-      myUid = user.uid;
-      const wait = setInterval(() => {
-        if (myNickname !== "익명") {
-          clearInterval(wait);
-          trackMyLocation(myUid);
-          listenAllUsers();
-        }
-      }, 500);
-    }
-  });
+  const zone = { name, lat, lng, radius, circle };
+  dangerZones.push(zone);
+  dangerOverlays.push(circle);
+  renderDangerList();
+  document.getElementById("dangerForm").style.display = "none";
+  document.getElementById("dangerName").value = "";
+};
 
-  signInAnonymously(auth);
-
-  map.on("click", async e => {
-    const lat = e.latlng.lat, lng = e.latlng.lng;
-    selectedLatLng = e.latlng;
-
-    if (currentClickMarker) map.removeLayer(currentClickMarker);
-    currentClickMarker = L.marker([lat, lng]).addTo(map).bindPopup("📍 선택한 위치").openPopup();
-
-    panel.style.display = "block";
-    placeContent.innerHTML = "🔎 장소를 불러오는 중...";
-
-    try {
-      const res = await fetch(`https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`, {
-        headers: {
-          Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0"
-        }
-      });
-
-      if (!res.ok) throw new Error("API 호출 실패");
-
-      const data = await res.json();
-      if (!data.documents || data.documents.length === 0) {
-        placeContent.innerHTML = "⚠️ 주변 음식점이 없습니다.";
-      } else {
-        placeContent.innerHTML = "<b>🍱 주변 음식점</b><br><br>" + data.documents.map(p => `
-          <div class="place">
-            <div class="place-title">${p.place_name}</div>
-            <div>${p.road_address_name || p.address_name}</div>
-            <div>${p.category_name}</div>
-          </div>
-        `).join("");
-      }
-    } catch (err) {
-      console.error("❌ 장소 검색 오류:", err);
-      placeContent.innerHTML = "❌ 장소 정보를 불러오는 데 실패했습니다.";
-    }
-  });
-
-    const dangerZones = [];
-  const dangerOverlays = [];
+function renderDangerList() {
   const dangerList = document.getElementById("dangerList");
+  dangerList.innerHTML = "";
 
-  // 위험지역 설정 버튼
-  document.getElementById("dangerZoneBtn").onclick = () => {
-    if (!selectedLatLng) {
-      alert("먼저 마커를 지도에 찍어주세요.");
-      return;
-    }
-    document.getElementById("dangerForm").style.display = "block";
-  };
-
-  // 위험지역 추가
-  document.getElementById("dangerForm").innerHTML = `
-    <label>이름: <input type="text" id="dangerName"></label><br>
-    <label>반경(m): 
-      <select id="dangerRadius">
-        <option value="10">10</option>
-        <option value="50">50</option>
-        <option value="100" selected>100</option>
-        <option value="200">200</option>
-      </select>
-    </label><br>
-    <button id="addDangerBtn">추가</button>
-  `;
-
-  document.getElementById("dangerForm").addEventListener("click", e => {
-    if (e.target.id !== "addDangerBtn") return;
-    const name = document.getElementById("dangerName").value.trim();
-    const radius = parseInt(document.getElementById("dangerRadius").value);
-    if (!name || !selectedLatLng) return;
-
-    const lat = selectedLatLng.lat;
-    const lng = selectedLatLng.lng;
-
-    const circle = L.circle([lat, lng], {
-      radius,
-      color: "red",
-      fillColor: "#f88",
-      fillOpacity: 0.4,
-      dashArray: "4,6"
-    }).addTo(map);
-
-    const zone = { name, lat, lng, radius, circle };
-    dangerZones.push(zone);
-    dangerOverlays.push(circle);
-    renderDangerList();
-    document.getElementById("dangerForm").style.display = "none";
+  dangerZones.forEach((zone, index) => {
+    const li = document.createElement("li");
+    li.innerHTML = `<b>${zone.name}</b> (${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}) [${zone.radius}m]
+      <button onclick="editDanger(${index})">수정</button>
+      <button onclick="removeDanger(${index})">삭제</button>`;
+    dangerList.appendChild(li);
   });
 
-  function renderDangerList() {
-    dangerList.innerHTML = "";
-    dangerZones.forEach((zone, index) => {
-      const li = document.createElement("li");
-      li.innerHTML = `<b>${zone.name}</b> (${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}) [${zone.radius}m]
-        <button onclick="removeDanger(${index})">삭제</button>`;
-      dangerList.appendChild(li);
-    });
-  }
+  const wrapper = document.getElementById("dangerListWrapper");
+  wrapper.style.display = dangerZones.length > 0 ? "block" : "none";
+}
 
-  window.removeDanger = function(index) {
-    map.removeLayer(dangerOverlays[index]);
-    dangerZones.splice(index, 1);
-    dangerOverlays.splice(index, 1);
-    renderDangerList();
-  };
+window.removeDanger = function(index) {
+  map.removeLayer(dangerOverlays[index]);
+  dangerZones.splice(index, 1);
+  dangerOverlays.splice(index, 1);
+  renderDangerList();
+};
 
-  function getDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371000;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-    return R * c;
-  }
+window.editDanger = function(index) {
+  const zone = dangerZones[index];
+  document.getElementById("dangerName").value = zone.name;
+  document.getElementById("dangerRadius").value = zone.radius;
+  selectedLatLng = L.latLng(zone.lat, zone.lng);
+  map.setView(selectedLatLng, 15);
+  document.getElementById("dangerForm").style.display = "block";
+};
 
-  function checkDangerZones(lat, lng) {
-    dangerZones.forEach(zone => {
-      const d = getDistance(lat, lng, zone.lat, zone.lng);
-      if (d <= zone.radius) {
-        let level = "";
-        if (d <= 10) level = "🚨 진동 강함 (10m)";
-        else if (d <= 50) level = "⚠️ 진동 중간 (50m)";
-        else if (d <= 100) level = "🔔 진동 약함 (100m)";
-        else level = "🔵 감지됨 (200m)";
-        console.log(`[위험지역 경고] ${zone.name} - ${level}`);
-      }
-    });
-  }
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) ** 2 +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon/2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
 
-  // 위험지역 토글
-  const dangerListPanel = document.getElementById("dangerListPanel");
-  const dangerToggle = document.getElementById("dangerToggle");
-  const dangerClose = document.getElementById("dangerCloseBtn");
+function checkDangerZones(lat, lng) {
+  dangerZones.forEach(zone => {
+    const d = getDistance(lat, lng, zone.lat, zone.lng);
+    if (d <= zone.radius) {
+      let level = "";
+      if (d <= 10) level = "🚨 진동 강함 (10m)";
+      else if (d <= 50) level = "⚠️ 진동 중간 (50m)";
+      else if (d <= 100) level = "🔔 진동 약함 (100m)";
+      else level = "🔵 감지됨 (200m)";
+      console.log(`[위험지역 경고] ${zone.name} - ${level}`);
+    }
+  });
+}
 
-  dangerToggle.onclick = () => {
-    dangerListPanel.style.display = "block";
-    dangerToggle.style.display = "none";
-  };
+// 위험지역 리스트 토글
+const dangerListToggle = document.getElementById("dangerListToggle");
+const dangerListPanel = document.getElementById("dangerListPanel");
 
-  dangerClose.onclick = () => {
-    dangerListPanel.style.display = "none";
-    dangerToggle.style.display = "inline-block";
-  };
+dangerListToggle.onclick = () => {
+  dangerListPanel.style.display = "block";
+  dangerListToggle.style.display = "none";
+};
+
+window.hideDangerList = () => {
+  dangerListPanel.style.display = "none";
+  dangerListToggle.style.display = "block";
+};
 </script>
 </body>
 </html>
