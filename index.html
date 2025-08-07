@@ -134,12 +134,12 @@ import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebase
 import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js";
 
 const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "XXXXXX",
-  appId: "XXXXXXXX"
+  apiKey: "AIzaSyBvLnMA7jF-1AoDQlgLdEDKFDyWk4N29mY",
+    authDomain: "gps-mapping-397bc.firebaseapp.com",
+    projectId: "gps-mapping-397bc",
+    storageBucket: "gps-mapping-397bc.appspot.com",
+    messagingSenderId: "338156458292",
+    appId: "1:338156458292:web:8380c00a6fbd292cd41561"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -283,7 +283,7 @@ map.on("click", async e => {
 
   try {
     const res = await fetch(`https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`, {
-      headers: { Authorization: "KakaoAK YOUR_KAKAO_REST_API_KEY" }
+      headers: { Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0" }
     });
     const data = await res.json();
 
@@ -409,3 +409,4 @@ window.hideDangerList = () => {
 </script>
 </body>
 </html>
+
