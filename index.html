@@ -50,7 +50,6 @@
       min-width: 260px;
     }
 
-    /* 리스트 패널은 기본 숨김 */
     #dangerListWrapper {
       position:absolute; bottom:20px; right:20px; background:white;
       padding:10px; border:1px solid #ccc; border-radius:8px;
@@ -64,7 +63,6 @@
       border: 1px solid #ccc; background: #f8f8f8; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
     }
 
-    /* 버튼은 기본 숨김(위험지역 생기면 보임) */
     #dangerToggle {
       position: absolute; bottom:20px; right:320px;
       background:#dc3545; color:white; border:none; padding:8px 12px;
@@ -374,21 +372,13 @@
     setDisplay("dangerForm", "block");
   });
 
-  // 위험지역 추가 폼 생성 (프리셋 + 직접 입력)
+  // 위험지역 추가 폼 생성 (직접 입력만 사용)
   const dangerForm = $("dangerForm");
   if (dangerForm) {
     dangerForm.innerHTML = `
       <div style="display:flex; flex-direction:column; gap:6px;">
         <label>이름: <input type="text" id="dangerName" placeholder="예: 공사구간"></label>
-        <label>반경(미터):
-          <select id="dangerRadiusPreset" style="margin-left:6px;">
-            <option value="10">10</option>
-            <option value="50">50</option>
-            <option value="100" selected>100</option>
-            <option value="200">200</option>
-          </select>
-        </label>
-        <label>직접 입력(선택): <input type="text" id="dangerRadiusCustom" placeholder="예: 346 또는 346m"></label>
+        <label>반경 입력: <input type="text" id="dangerRadiusCustom" placeholder="예: 346, 346m, 0.5km"></label>
         <div style="display:flex; gap:8px; margin-top:6px;">
           <button id="addDangerBtn">추가</button>
           <button id="cancelDangerBtn" type="button">취소</button>
@@ -396,35 +386,30 @@
       </div>
     `;
 
-    // 취소 버튼
     on("cancelDangerBtn", "click", () => setDisplay("dangerForm", "none"));
 
-    // 추가 동작
+    // 숫자+단위 파싱(m, km 지원)
+    function parseRadiusToMeters(raw) {
+      if (!raw) return NaN;
+      const m = String(raw).trim().match(/^\s*([\d.]+)\s*(km|m)?\s*$/i);
+      if (!m) return NaN;
+      const val = parseFloat(m[1]);
+      const unit = (m[2] || "m").toLowerCase();
+      if (!(val > 0)) return NaN;
+      return unit === "km" ? val * 1000 : val;
+    }
+
     dangerForm.addEventListener("click", (e) => {
       if (e.target.id !== "addDangerBtn") return;
 
       const nameEl = $("dangerName");
-      const presetEl = $("dangerRadiusPreset");
       const customEl = $("dangerRadiusCustom");
-      if (!nameEl || !presetEl || !customEl || !selectedLatLng) return;
+      if (!nameEl || !customEl || !selectedLatLng) return;
 
       const name = nameEl.value.trim();
-      if (!name) return;
-
-      // 사용자 입력 우선: 숫자만 추출(346, 346m, 346.5 등)
-      let radius = null;
-      const raw = customEl.value.trim();
-      if (raw !== "") {
-        const m = raw.match(/([\d.]+)/);
-        if (m) radius = parseFloat(m[1]);
-      }
-      if (!(radius > 0)) {
-        radius = parseFloat(presetEl.value);
-      }
-      if (!(radius > 0)) {
-        alert("반경을 올바르게 입력하세요.");
-        return;
-      }
+      const radius = parseRadiusToMeters(customEl.value);
+      if (!name) { alert("이름을 입력하세요."); return; }
+      if (!(radius > 0)) { alert("반경을 올바르게 입력하세요. 예: 346, 346m, 0.5km"); return; }
 
       ensureDangerHatchPattern();
 
