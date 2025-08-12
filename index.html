@@ -151,14 +151,15 @@
   let currentClickMarker = null;
   let selectedLatLng = null;
 
-  const panel = document.getElementById("placePanel");
-  const placeContent = document.getElementById("placeContent");
-  document.getElementById("placeCloseBtn").onclick = () => panel.style.display = "none";
+  const $ = (id) => document.getElementById(id);
 
-  const nicknameDiv = document.getElementById("nicknamePrompt");
-  const nicknameBtn = document.getElementById("nicknameBtn");
-  nicknameBtn.addEventListener("click", () => {
-    const input = document.getElementById("nicknameInput").value.trim();
+  const panel = $("placePanel");
+  const placeContent = $("placeContent");
+  $("placeCloseBtn").onclick = () => panel.style.display = "none";
+
+  const nicknameDiv = $("nicknamePrompt");
+  $("nicknameBtn").addEventListener("click", () => {
+    const input = $("nicknameInput").value.trim();
     if (input) {
       myNickname = input;
       nicknameDiv.style.display = "none";
@@ -167,13 +168,13 @@
     }
   });
 
-  document.getElementById("userListToggle").onclick = () => {
-    const ul = document.getElementById("userList");
+  $("userListToggle").onclick = () => {
+    const ul = $("userList");
     ul.style.display = ul.style.display === "block" ? "none" : "block";
   };
 
-  document.getElementById("editNicknameBtn").onclick = () => {
-    const newNick = document.getElementById("editNicknameInput").value.trim();
+  $("editNicknameBtn").onclick = () => {
+    const newNick = $("editNicknameInput").value.trim();
     if (newNick) {
       myNickname = newNick;
       if (myUid) set(ref(db, "locations/" + myUid + "/nickname"), newNick);
@@ -192,7 +193,7 @@
   }
 
   function showUser(uid, lat, lng, heading, nickname = "익명") {
-    // 이모티콘 대신 방향 삼각형 + 점 마커
+    // 방향 삼각형 + 점 마커
     const icon = L.divIcon({
       className: "custom-icon",
       html: `<div style="text-align:center;">
@@ -216,7 +217,7 @@
   }
 
   function renderUserList() {
-    const ul = document.getElementById("userListUl");
+    const ul = $("userListUl");
     ul.innerHTML = "";
     for (const uid in userData) {
       const li = document.createElement("li");
@@ -304,17 +305,16 @@
   // ===== 위험지역 관리 =====
   const dangerZones = [];
   const dangerOverlays = [];
-  const dangerList = document.getElementById("dangerList");
-  const dangerListWrapper = document.getElementById("dangerListWrapper");
-  const dangerToggle = document.getElementById("dangerToggle");
-  const dangerClose = document.getElementById("dangerCloseBtn");
+  const dangerList = $("dangerList");
+  const dangerListWrapper = $("dangerListWrapper");
+  const dangerToggle = $("dangerToggle");
+  const dangerClose = $("dangerCloseBtn");
 
   // SVG 해치 패턴(빗금) 정의 - 한 번만 생성
   function ensureDangerHatchPattern() {
     const pane = map.getPanes().overlayPane;
     let svg = pane.querySelector('svg');
     if (!svg) {
-      // SVG 렌더러 강제 생성
       L.svg().addTo(map);
       svg = pane.querySelector('svg');
     }
@@ -354,16 +354,16 @@
   }
 
   // 위험지역 설정 버튼
-  document.getElementById("dangerZoneBtn").onclick = () => {
+  $("dangerZoneBtn").onclick = () => {
     if (!selectedLatLng) {
       alert("먼저 지도에서 위치를 선택하세요.");
       return;
     }
-    document.getElementById("dangerForm").style.display = "block";
+    $("dangerForm").style.display = "block";
   };
 
   // 위험지역 추가 폼 생성
-  document.getElementById("dangerForm").innerHTML = `
+  $("dangerForm").innerHTML = `
     <label>이름: <input type="text" id="dangerName"></label><br>
     <label>반경(m):
       <select id="dangerRadius">
@@ -377,10 +377,10 @@
   `;
 
   // 위험지역 추가 동작 (빗금 채우기 적용)
-  document.getElementById("dangerForm").addEventListener("click", e => {
+  $("dangerForm").addEventListener("click", e => {
     if (e.target.id !== "addDangerBtn") return;
-    const name = document.getElementById("dangerName").value.trim();
-    const radius = parseInt(document.getElementById("dangerRadius").value);
+    const name = $("dangerName").value.trim();
+    const radius = parseInt($("dangerRadius").value);
     if (!name || !selectedLatLng) return;
 
     const lat = selectedLatLng.lat;
@@ -392,12 +392,11 @@
       radius,
       color: "#d22",
       weight: 2,
-      fillColor: "#f88",   // 폴백 색상
-      fillOpacity: 1.0,    // 패턴이 보이도록 1로
+      fillColor: "#f88",   // 폴백
+      fillOpacity: 1.0,
       dashArray: "4,6"
     });
 
-    // 레이어 추가 전 'add' 이벤트에서 패턴 채우기 적용
     circle.once('add', () => {
       if (circle._path) {
         circle._path.setAttribute('fill', 'url(#dangerHatch)');
@@ -410,7 +409,7 @@
     dangerZones.push(zone);
     dangerOverlays.push(circle);
     renderDangerList();
-    document.getElementById("dangerForm").style.display = "none";
+    $("dangerForm").style.display = "none";
   });
 
   // 리스트 렌더 및 UI 갱신
@@ -464,20 +463,16 @@
   }
 
   // 버튼으로 패널 열기
-  dangerToggle.onclick = () => {
+  dangerToggle.addEventListener("click", () => {
     dangerToggle.style.display = "none";
     dangerListWrapper.style.display = "block";
-  };
+  });
 
   // 닫기 버튼으로 패널 닫기 -> 버튼 복귀
-  dangerClose.onclick = () => {
+  dangerClose.addEventListener("click", () => {
     dangerListWrapper.style.display = "none";
-    if (dangerZones.length > 0) {
-      dangerToggle.style.display = "inline-block";
-    } else {
-      dangerToggle.style.display = "none";
-    }
-  };
+    dangerToggle.style.display = dangerZones.length > 0 ? "inline-block" : "none";
+  });
 
   // 초기 UI 상태 정리
   updateDangerUI();
