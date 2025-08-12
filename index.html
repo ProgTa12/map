@@ -53,7 +53,7 @@
     #dangerListWrapper {
       position:absolute; bottom:20px; right:20px; background:white;
       padding:10px; border:1px solid #ccc; border-radius:8px;
-      width:280px; max-height:300px; overflow:auto; display:none;
+      width:300px; max-height:300px; overflow:auto; display:none;
     }
 
     .danger-header {
@@ -74,6 +74,9 @@
       background:#007bff; color:white; border:none; padding:8px 12px;
       border-radius:6px; font-weight:bold; cursor:pointer;
     }
+
+    .danger-actions { display:flex; gap:6px; margin-top:4px; }
+    .danger-item { margin-bottom:6px; }
   </style>
 </head>
 <body>
@@ -101,7 +104,7 @@
   <div id="placeContent"></div>
 </div>
 
-<!-- 위험지역 설정 패널 -->
+<!-- 위험지역 설정/수정 패널 -->
 <div id="dangerForm"></div>
 
 <!-- 위험지역 토글 버튼 -->
@@ -155,6 +158,10 @@
   const userData = {};
   let currentClickMarker = null;
   let selectedLatLng = null;
+
+  // 위험지역 상태
+  const dangerZones = [];  // { name, lat, lng, radius, circle }
+  const dangerOverlays = [];
 
   // ---------- UI bindings ----------
   on("placeCloseBtn", "click", () => setDisplay("placePanel", "none"));
@@ -274,7 +281,7 @@
 
   signInAnonymously(auth);
 
-  // ---------- Kakao Local (클릭 시 장소패널) ----------
+  // ---------- Kakao Local (지도 클릭 시 장소패널) ----------
   map.on("click", async e => {
     const lat = e.latlng.lat, lng = e.latlng.lng;
     selectedLatLng = e.latlng;
@@ -312,11 +319,7 @@
     }
   });
 
-  // ---------- 위험지역 ----------
-  const dangerZones = [];
-  const dangerOverlays = [];
-
-  // SVG 해치 패턴(빗금) 정의 - 한 번만 생성
+  // ---------- 위험지역 공통 ----------
   function ensureDangerHatchPattern() {
     const pane = map.getPanes().overlayPane;
     let svg = pane.querySelector('svg');
@@ -347,7 +350,16 @@
     }
   }
 
-  // UI 표시 갱신: 개수에 따라 버튼/패널 제어
+  function parseRadiusToMeters(raw) {
+    if (!raw) return NaN;
+    const m = String(raw).trim().match(/^\s*([\d.]+)\s*(km|m)?\s*$/i);
+    if (!m) return NaN;
+    const val = parseFloat(m[1]);
+    const unit = (m[2] || "m").toLowerCase();
+    if (!(val > 0)) return NaN;
+    return unit === "km" ? val * 1000 : val;
+  }
+
   function updateDangerUI() {
     const toggleBtn = $("dangerToggle");
     const wrapper = $("dangerListWrapper");
@@ -363,91 +375,144 @@
     }
   }
 
-  // 위험지역 설정 버튼
+  // ---------- 위험지역 추가 ----------
   on("dangerZoneBtn", "click", () => {
     if (!selectedLatLng) {
       alert("먼저 지도에서 위치를 선택하세요.");
       return;
     }
-    setDisplay("dangerForm", "block");
+    openDangerForm({ mode: "add" });
   });
 
-  // 위험지역 추가 폼 생성 (직접 입력만 사용)
-  const dangerForm = $("dangerForm");
-  if (dangerForm) {
-    dangerForm.innerHTML = `
+  function openDangerForm({ mode, index = null }) {
+    const form = $("dangerForm");
+    if (!form) return;
+
+    const isEdit = mode === "edit";
+    const zone = isEdit ? dangerZones[index] : null;
+    const defaultName = isEdit ? zone.name : "";
+    const defaultRadius = isEdit ? zone.radius : "";
+
+    form.innerHTML = `
       <div style="display:flex; flex-direction:column; gap:6px;">
-        <label>이름: <input type="text" id="dangerName" placeholder="예: 공사구간"></label>
-        <label>반경 입력: <input type="text" id="dangerRadiusCustom" placeholder="예: 346, 346m, 0.5km"></label>
-        <div style="display:flex; gap:8px; margin-top:6px;">
-          <button id="addDangerBtn">추가</button>
+        <b>${isEdit ? "위험지역 수정" : "위험지역 추가"}</b>
+        <label>이름: <input type="text" id="dangerName" placeholder="예: 공사구간" value="${defaultName}"></label>
+        <label>반경 입력: <input type="text" id="dangerRadiusCustom" placeholder="예: 50, 50m, 0.05km" value="${defaultRadius}"></label>
+        <div class="danger-actions">
+          <button id="${isEdit ? "saveDangerBtn" : "addDangerBtn"}">${isEdit ? "저장" : "추가"}</button>
           <button id="cancelDangerBtn" type="button">취소</button>
         </div>
       </div>
     `;
+    setDisplay("dangerForm", "block");
 
     on("cancelDangerBtn", "click", () => setDisplay("dangerForm", "none"));
 
-    // 숫자+단위 파싱(m, km 지원)
-    function parseRadiusToMeters(raw) {
-      if (!raw) return NaN;
-      const m = String(raw).trim().match(/^\s*([\d.]+)\s*(km|m)?\s*$/i);
-      if (!m) return NaN;
-      const val = parseFloat(m[1]);
-      const unit = (m[2] || "m").toLowerCase();
-      if (!(val > 0)) return NaN;
-      return unit === "km" ? val * 1000 : val;
+    if (isEdit) {
+      on("saveDangerBtn", "click", () => {
+        const nameEl = $("dangerName");
+        const customEl = $("dangerRadiusCustom");
+        if (!nameEl || !customEl) return;
+
+        const name = nameEl.value.trim();
+        const radius = parseRadiusToMeters(customEl.value);
+        if (!name) { alert("이름을 입력하세요."); return; }
+        if (!(radius > 0)) { alert("반경을 올바르게 입력하세요. 예: 50, 50m, 0.05km"); return; }
+
+        // 반영
+        zone.name = name;
+        zone.radius = radius;
+
+        // 원 반지름 갱신
+        zone.circle.setRadius(radius);
+
+        // 혹시 모를 스타일 초기화 시, 해치 유지
+        if (zone.circle._path) zone.circle._path.setAttribute('fill', 'url(#dangerHatch)');
+
+        // 툴팁 갱신
+        const tt = zone.circle.getTooltip();
+        if (tt) tt.setContent(zone.name); else zone.circle.bindTooltip(zone.name, { direction:'top', sticky:true, opacity:0.9 });
+
+        renderDangerList();
+        setDisplay("dangerForm", "none");
+      });
+    } else {
+      on("addDangerBtn", "click", () => {
+        const nameEl = $("dangerName");
+        const customEl = $("dangerRadiusCustom");
+        if (!nameEl || !customEl || !selectedLatLng) return;
+
+        const name = nameEl.value.trim();
+        const radius = parseRadiusToMeters(customEl.value);
+        if (!name) { alert("이름을 입력하세요."); return; }
+        if (!(radius > 0)) { alert("반경을 올바르게 입력하세요. 예: 50, 50m, 0.05km"); return; }
+
+        ensureDangerHatchPattern();
+
+        const circle = L.circle([selectedLatLng.lat, selectedLatLng.lng], {
+          radius,
+          color: "#d22",
+          weight: 2,
+          fillColor: "#f88",
+          fillOpacity: 1.0,
+          dashArray: "4,6"
+        });
+
+        // 해치 적용
+        circle.once('add', () => {
+          if (circle._path) circle._path.setAttribute('fill', 'url(#dangerHatch)');
+        });
+
+        // 호버 시 이름 툴팁
+        circle.bindTooltip(name, { direction:'top', sticky:true, opacity:0.9 });
+
+        // 원 클릭 시 수정 폼 열기 (지도 클릭 이벤트와 충돌 방지)
+        circle.on('click', (ev) => {
+          L.DomEvent.stopPropagation(ev);
+          const idx = dangerZones.findIndex(z => z.circle === circle);
+          if (idx !== -1) openDangerForm({ mode: "edit", index: idx });
+        });
+
+        circle.addTo(map);
+
+        const zone = { name, lat: selectedLatLng.lat, lng: selectedLatLng.lng, radius, circle };
+        dangerZones.push(zone);
+        dangerOverlays.push(circle);
+        renderDangerList();
+        setDisplay("dangerForm", "none");
+      });
     }
-
-    dangerForm.addEventListener("click", (e) => {
-      if (e.target.id !== "addDangerBtn") return;
-
-      const nameEl = $("dangerName");
-      const customEl = $("dangerRadiusCustom");
-      if (!nameEl || !customEl || !selectedLatLng) return;
-
-      const name = nameEl.value.trim();
-      const radius = parseRadiusToMeters(customEl.value);
-      if (!name) { alert("이름을 입력하세요."); return; }
-      if (!(radius > 0)) { alert("반경을 올바르게 입력하세요. 예: 346, 346m, 0.5km"); return; }
-
-      ensureDangerHatchPattern();
-
-      const circle = L.circle([selectedLatLng.lat, selectedLatLng.lng], {
-        radius,
-        color: "#d22",
-        weight: 2,
-        fillColor: "#f88",
-        fillOpacity: 1.0,
-        dashArray: "4,6"
-      });
-
-      circle.once('add', () => {
-        if (circle._path) circle._path.setAttribute('fill', 'url(#dangerHatch)');
-      });
-
-      circle.addTo(map);
-
-      const zone = { name, lat: selectedLatLng.lat, lng: selectedLatLng.lng, radius, circle };
-      dangerZones.push(zone);
-      dangerOverlays.push(circle);
-      renderDangerList();
-      setDisplay("dangerForm", "none");
-    });
   }
 
+  // ---------- 위험지역 리스트 렌더 ----------
   function renderDangerList() {
     const list = $("dangerList");
     if (!list) return;
     list.innerHTML = "";
+
     dangerZones.forEach((zone, index) => {
       const r = (Math.round(zone.radius * 10) / 10).toString().replace(/\.0$/, "");
       const li = document.createElement("li");
-      li.innerHTML = `<b>${zone.name}</b> (${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}) [${r}m]
-        <button data-idx="${index}" class="danger-remove">삭제</button>`;
+      li.className = "danger-item";
+      li.innerHTML = `
+        <div><b>${zone.name}</b> (${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}) [${r}m]</div>
+        <div class="danger-actions">
+          <button data-idx="${index}" class="danger-edit">편집</button>
+          <button data-idx="${index}" class="danger-remove">삭제</button>
+        </div>
+      `;
       list.appendChild(li);
     });
 
+    // 편집
+    list.querySelectorAll(".danger-edit").forEach(btn => {
+      btn.addEventListener("click", (ev) => {
+        const idx = parseInt(ev.currentTarget.getAttribute("data-idx"), 10);
+        openDangerForm({ mode: "edit", index: idx });
+      });
+    });
+
+    // 삭제
     list.querySelectorAll(".danger-remove").forEach(btn => {
       btn.addEventListener("click", (ev) => {
         const idx = parseInt(ev.currentTarget.getAttribute("data-idx"), 10);
@@ -470,7 +535,7 @@
     }
   }
 
-  // 거리/경고
+  // ---------- 경고 계산 ----------
   function getDistance(lat1, lon1, lat2, lon2) {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -496,7 +561,7 @@
     });
   }
 
-  // 리스트 열기/닫기
+  // ---------- 리스트 열기/닫기 ----------
   on("dangerToggle", "click", () => {
     setDisplay("dangerToggle", "none");
     setDisplay("dangerListWrapper", "block");
