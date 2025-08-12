@@ -8,7 +8,7 @@
   <style>
     #map { width: 100vw; height: 100vh; }
     #nicknamePrompt, #userListToggle, #userList, #placePanel,
-    #dangerForm, #dangerListWrapper, #dangerZoneBtn { z-index: 1000; }
+    #dangerForm, #dangerListWrapper, #dangerZoneBtn, #dangerToggle { z-index: 1000; }
 
     #nicknamePrompt {
       position:absolute; top:20px; left:50%; transform:translateX(-50%);
@@ -49,28 +49,27 @@
       border:1px solid #ccc; border-radius:8px; display:none;
     }
 
+    /* 리스트 패널은 기본 숨김 */
     #dangerListWrapper {
       position:absolute; bottom:20px; right:20px; background:white;
       padding:10px; border:1px solid #ccc; border-radius:8px;
-      width:280px; max-height:300px; overflow:auto;
+      width:280px; max-height:300px; overflow:auto; display:none;
     }
 
-    #dangerListPanel {
-      display: none;
-    }
+    #dangerListPanel { display: block; }
 
     .danger-header {
       display: flex; justify-content: space-between; align-items: center;
     }
-
     .danger-header button {
       border: none; background: none; font-size: 16px; cursor: pointer;
     }
 
+    /* 버튼은 기본 숨김(위험지역 생기면 보임) */
     #dangerToggle {
       position: absolute; bottom:20px; right:320px;
       background:#dc3545; color:white; border:none; padding:8px 12px;
-      border-radius:6px; font-weight:bold; cursor:pointer;
+      border-radius:6px; font-weight:bold; cursor:pointer; display:none;
     }
 
     #dangerZoneBtn {
@@ -105,13 +104,13 @@
   <div id="placeContent"></div>
 </div>
 
-<!-- 위험지역 토글 버튼 -->
+<!-- 위험지역 토글 버튼: 위험지역이 있을 때만 표시 -->
 <button id="dangerToggle">📍 위험지역 리스트</button>
 
 <!-- 위험지역 설정 버튼 -->
 <button id="dangerZoneBtn">위험지역 설정</button>
 
-<!-- 위험지역 리스트 패널 -->
+<!-- 위험지역 리스트 패널: 열렸을 때만 표시 -->
 <div id="dangerListWrapper">
   <div id="dangerListPanel">
     <div class="danger-header">
@@ -122,7 +121,7 @@
   </div>
 </div>
 
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-app.js";
   import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/10.12.3/firebase-database.js";
@@ -177,7 +176,7 @@
     const newNick = document.getElementById("editNicknameInput").value.trim();
     if (newNick) {
       myNickname = newNick;
-      set(ref(db, "locations/" + myUid + "/nickname"), newNick);
+      if (myUid) set(ref(db, "locations/" + myUid + "/nickname"), newNick);
       alert("닉네임 수정됨");
     }
   };
@@ -271,25 +270,23 @@
     selectedLatLng = e.latlng;
 
     if (currentClickMarker) map.removeLayer(currentClickMarker);
-    currentClickMarker = L.marker([lat, lng]).addTo(map).bindPopup("📍 선택한 위치").openPopup();
+    currentClickMarker = L.marker([lat, lng]).addTo(map).bindPopup("선택한 위치").openPopup();
 
     panel.style.display = "block";
-    placeContent.innerHTML = "🔎 장소를 불러오는 중...";
+    placeContent.innerHTML = "장소를 불러오는 중...";
 
     try {
       const res = await fetch(`https://dapi.kakao.com/v2/local/search/category.json?category_group_code=FD6&x=${lng}&y=${lat}&radius=500`, {
-        headers: {
-          Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0"
-        }
+        headers: { Authorization: "KakaoAK b5321f61696e2bf38cb098797fccedb0" }
       });
 
       if (!res.ok) throw new Error("API 호출 실패");
 
       const data = await res.json();
       if (!data.documents || data.documents.length === 0) {
-        placeContent.innerHTML = "⚠️ 주변 음식점이 없습니다.";
+        placeContent.innerHTML = "주변 음식점이 없습니다.";
       } else {
-        placeContent.innerHTML = "<b>🍱 주변 음식점</b><br><br>" + data.documents.map(p => `
+        placeContent.innerHTML = "<b>주변 음식점</b><br><br>" + data.documents.map(p => `
           <div class="place">
             <div class="place-title">${p.place_name}</div>
             <div>${p.road_address_name || p.address_name}</div>
@@ -298,14 +295,32 @@
         `).join("");
       }
     } catch (err) {
-      console.error("❌ 장소 검색 오류:", err);
-      placeContent.innerHTML = "❌ 장소 정보를 불러오는 데 실패했습니다.";
+      console.error("장소 검색 오류:", err);
+      placeContent.innerHTML = "장소 정보를 불러오는 데 실패했습니다.";
     }
   });
 
-    const dangerZones = [];
+  // ===== 위험지역 관리 =====
+  const dangerZones = [];
   const dangerOverlays = [];
   const dangerList = document.getElementById("dangerList");
+  const dangerListWrapper = document.getElementById("dangerListWrapper");
+  const dangerToggle = document.getElementById("dangerToggle");
+  const dangerClose = document.getElementById("dangerCloseBtn");
+
+  // UI 표시 갱신: 개수에 따라 버튼/패널 제어
+  function updateDangerUI() {
+    if (dangerZones.length === 0) {
+      // 아무것도 없으면 버튼/패널 모두 숨김
+      dangerToggle.style.display = "none";
+      dangerListWrapper.style.display = "none";
+    } else {
+      // 하나 이상이면 버튼은 보이되, 패널은 닫힌 상태 유지
+      if (dangerListWrapper.style.display !== "block") {
+        dangerToggle.style.display = "inline-block";
+      }
+    }
+  }
 
   // 위험지역 설정 버튼
   document.getElementById("dangerZoneBtn").onclick = () => {
@@ -316,10 +331,10 @@
     document.getElementById("dangerForm").style.display = "block";
   };
 
-  // 위험지역 추가
+  // 위험지역 추가 폼 생성
   document.getElementById("dangerForm").innerHTML = `
     <label>이름: <input type="text" id="dangerName"></label><br>
-    <label>반경(m): 
+    <label>반경(m):
       <select id="dangerRadius">
         <option value="10">10</option>
         <option value="50">50</option>
@@ -330,6 +345,7 @@
     <button id="addDangerBtn">추가</button>
   `;
 
+  // 위험지역 추가 동작
   document.getElementById("dangerForm").addEventListener("click", e => {
     if (e.target.id !== "addDangerBtn") return;
     const name = document.getElementById("dangerName").value.trim();
@@ -354,6 +370,7 @@
     document.getElementById("dangerForm").style.display = "none";
   });
 
+  // 리스트 렌더 및 UI 갱신
   function renderDangerList() {
     dangerList.innerHTML = "";
     dangerZones.forEach((zone, index) => {
@@ -362,22 +379,30 @@
         <button onclick="removeDanger(${index})">삭제</button>`;
       dangerList.appendChild(li);
     });
+    updateDangerUI();
   }
 
+  // 삭제 함수는 전역으로 노출
   window.removeDanger = function(index) {
-    map.removeLayer(dangerOverlays[index]);
+    if (dangerOverlays[index]) map.removeLayer(dangerOverlays[index]);
     dangerZones.splice(index, 1);
     dangerOverlays.splice(index, 1);
     renderDangerList();
+
+    // 패널이 열려 있었고, 모두 삭제된 경우 패널 닫고 버튼도 숨김
+    if (dangerZones.length === 0) {
+      dangerListWrapper.style.display = "none";
+      dangerToggle.style.display = "none";
+    }
   };
 
   function getDistance(lat1, lon1, lat2, lon2) {
     const R = 6371000;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
-    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+    const a = Math.sin(dLat/2) ** 2 +
               Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-              Math.sin(dLon/2) * Math.sin(dLon/2);
+              Math.sin(dLon/2) ** 2;
     const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
     return R * c;
   }
@@ -387,29 +412,35 @@
       const d = getDistance(lat, lng, zone.lat, zone.lng);
       if (d <= zone.radius) {
         let level = "";
-        if (d <= 10) level = "🚨 진동 강함 (10m)";
-        else if (d <= 50) level = "⚠️ 진동 중간 (50m)";
-        else if (d <= 100) level = "🔔 진동 약함 (100m)";
-        else level = "🔵 감지됨 (200m)";
+        if (d <= 10) level = "진동 강함 (10m)";
+        else if (d <= 50) level = "진동 중간 (50m)";
+        else if (d <= 100) level = "진동 약함 (100m)";
+        else level = "감지됨 (200m)";
         console.log(`[위험지역 경고] ${zone.name} - ${level}`);
       }
     });
   }
 
-  // 위험지역 토글
-  const dangerListPanel = document.getElementById("dangerListPanel");
-  const dangerToggle = document.getElementById("dangerToggle");
-  const dangerClose = document.getElementById("dangerCloseBtn");
-
+  // 버튼으로 패널 열기
   dangerToggle.onclick = () => {
-    dangerListPanel.style.display = "block";
+    // 버튼 숨기고 패널 표시
     dangerToggle.style.display = "none";
+    dangerListWrapper.style.display = "block";
   };
 
+  // X 버튼으로 패널 닫기 -> 버튼 복귀
   dangerClose.onclick = () => {
-    dangerListPanel.style.display = "none";
-    dangerToggle.style.display = "inline-block";
+    dangerListWrapper.style.display = "none";
+    // 위험지역이 남아있을 때만 버튼 복귀
+    if (dangerZones.length > 0) {
+      dangerToggle.style.display = "inline-block";
+    } else {
+      dangerToggle.style.display = "none";
+    }
   };
+
+  // 초기 UI 상태 정리
+  updateDangerUI();
 </script>
 </body>
 </html>
