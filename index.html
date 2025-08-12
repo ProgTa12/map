@@ -47,7 +47,7 @@
     #dangerForm {
       position:absolute; top:100px; right:20px; background:white; padding:10px;
       border:1px solid #ccc; border-radius:8px; display:none;
-      min-width: 220px;
+      min-width: 260px;
     }
 
     /* 리스트 패널은 기본 숨김 */
@@ -103,10 +103,10 @@
   <div id="placeContent"></div>
 </div>
 
-<!-- 위험지역 설정 패널 (누락 방지: 실제 DOM에 추가) -->
+<!-- 위험지역 설정 패널 -->
 <div id="dangerForm"></div>
 
-<!-- 위험지역 토글 버튼: 위험지역이 있을 때만 표시 -->
+<!-- 위험지역 토글 버튼 -->
 <button id="dangerToggle">위험지역 리스트</button>
 
 <!-- 위험지역 설정 버튼 -->
@@ -374,31 +374,57 @@
     setDisplay("dangerForm", "block");
   });
 
-  // 위험지역 추가 폼 생성
+  // 위험지역 추가 폼 생성 (프리셋 + 직접 입력)
   const dangerForm = $("dangerForm");
   if (dangerForm) {
     dangerForm.innerHTML = `
-      <label>이름: <input type="text" id="dangerName"></label><br>
-      <label>반경(m):
-        <select id="dangerRadius">
-          <option value="10">10</option>
-          <option value="50">50</option>
-          <option value="100" selected>100</option>
-          <option value="200">200</option>
-        </select>
-      </label><br>
-      <button id="addDangerBtn">추가</button>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label>이름: <input type="text" id="dangerName" placeholder="예: 공사구간"></label>
+        <label>반경(미터):
+          <select id="dangerRadiusPreset" style="margin-left:6px;">
+            <option value="10">10</option>
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+            <option value="200">200</option>
+          </select>
+        </label>
+        <label>직접 입력(선택): <input type="text" id="dangerRadiusCustom" placeholder="예: 346 또는 346m"></label>
+        <div style="display:flex; gap:8px; margin-top:6px;">
+          <button id="addDangerBtn">추가</button>
+          <button id="cancelDangerBtn" type="button">취소</button>
+        </div>
+      </div>
     `;
+
+    // 취소 버튼
+    on("cancelDangerBtn", "click", () => setDisplay("dangerForm", "none"));
+
+    // 추가 동작
     dangerForm.addEventListener("click", (e) => {
       if (e.target.id !== "addDangerBtn") return;
 
       const nameEl = $("dangerName");
-      const radiusEl = $("dangerRadius");
-      if (!nameEl || !radiusEl || !selectedLatLng) return;
+      const presetEl = $("dangerRadiusPreset");
+      const customEl = $("dangerRadiusCustom");
+      if (!nameEl || !presetEl || !customEl || !selectedLatLng) return;
 
       const name = nameEl.value.trim();
-      const radius = parseInt(radiusEl.value, 10);
       if (!name) return;
+
+      // 사용자 입력 우선: 숫자만 추출(346, 346m, 346.5 등)
+      let radius = null;
+      const raw = customEl.value.trim();
+      if (raw !== "") {
+        const m = raw.match(/([\d.]+)/);
+        if (m) radius = parseFloat(m[1]);
+      }
+      if (!(radius > 0)) {
+        radius = parseFloat(presetEl.value);
+      }
+      if (!(radius > 0)) {
+        alert("반경을 올바르게 입력하세요.");
+        return;
+      }
 
       ensureDangerHatchPattern();
 
@@ -430,8 +456,9 @@
     if (!list) return;
     list.innerHTML = "";
     dangerZones.forEach((zone, index) => {
+      const r = (Math.round(zone.radius * 10) / 10).toString().replace(/\.0$/, "");
       const li = document.createElement("li");
-      li.innerHTML = `<b>${zone.name}</b> (${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}) [${zone.radius}m]
+      li.innerHTML = `<b>${zone.name}</b> (${zone.lat.toFixed(4)}, ${zone.lng.toFixed(4)}) [${r}m]
         <button data-idx="${index}" class="danger-remove">삭제</button>`;
       list.appendChild(li);
     });
@@ -478,7 +505,7 @@
         if (d <= 10) level = "진동 강함 (10m)";
         else if (d <= 50) level = "진동 중간 (50m)";
         else if (d <= 100) level = "진동 약함 (100m)";
-        else level = "감지됨 (200m)";
+        else level = `감지됨 (${zone.radius}m)`;
         console.log(`[위험지역 경고] ${zone.name} - ${level}`);
       }
     });
