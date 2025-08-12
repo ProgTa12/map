@@ -37,8 +37,8 @@
     }
 
     #placePanel button {
-      float: right; border: none; background: none;
-      font-size: 16px; cursor: pointer;
+      float: right; border: 1px solid #ccc; background: #f8f8f8;
+      font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
     }
 
     .place { margin-bottom: 10px; padding-bottom: 5px; border-bottom: 1px solid #eee; }
@@ -62,7 +62,7 @@
       display: flex; justify-content: space-between; align-items: center;
     }
     .danger-header button {
-      border: none; background: none; font-size: 16px; cursor: pointer;
+      border: 1px solid #ccc; background: #f8f8f8; font-size: 12px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
     }
 
     /* 버튼은 기본 숨김(위험지역 생기면 보임) */
@@ -100,12 +100,12 @@
 
 <!-- 장소 검색 결과 -->
 <div id="placePanel">
-  <button id="placeCloseBtn">❌</button>
+  <button id="placeCloseBtn">닫기</button>
   <div id="placeContent"></div>
 </div>
 
 <!-- 위험지역 토글 버튼: 위험지역이 있을 때만 표시 -->
-<button id="dangerToggle">📍 위험지역 리스트</button>
+<button id="dangerToggle">위험지역 리스트</button>
 
 <!-- 위험지역 설정 버튼 -->
 <button id="dangerZoneBtn">위험지역 설정</button>
@@ -114,8 +114,8 @@
 <div id="dangerListWrapper">
   <div id="dangerListPanel">
     <div class="danger-header">
-      <b>📍 위험지역 목록</b>
-      <button id="dangerCloseBtn">❌</button>
+      <b>위험지역 목록</b>
+      <button id="dangerCloseBtn">닫기</button>
     </div>
     <ul id="dangerList" style="padding-left:16px;"></ul>
   </div>
@@ -192,11 +192,12 @@
   }
 
   function showUser(uid, lat, lng, heading, nickname = "익명") {
+    // 이모티콘 대신 방향 삼각형 + 점 마커
     const icon = L.divIcon({
       className: "custom-icon",
       html: `<div style="text-align:center;">
-        <div style="font-size:20px; transform: rotate(${heading}deg);">🧭</div>
-        <div style="width:12px; height:12px; background:${uid === myUid ? 'red' : 'blue'}; border-radius:50%; margin:auto; margin-top:-5px;"></div>
+        <div style="width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid black;margin:0 auto; transform: rotate(${heading}deg);"></div>
+        <div style="width:12px; height:12px; background:${uid === myUid ? 'red' : 'blue'}; border-radius:50%; margin:2px auto 0;"></div>
       </div>`,
       iconSize: [30, 40],
       iconAnchor: [15, 20]
@@ -308,14 +309,44 @@
   const dangerToggle = document.getElementById("dangerToggle");
   const dangerClose = document.getElementById("dangerCloseBtn");
 
+  // SVG 해치 패턴(빗금) 정의 - 한 번만 생성
+  function ensureDangerHatchPattern() {
+    const pane = map.getPanes().overlayPane;
+    let svg = pane.querySelector('svg');
+    if (!svg) {
+      // SVG 렌더러 강제 생성
+      L.svg().addTo(map);
+      svg = pane.querySelector('svg');
+    }
+    let defs = svg.querySelector('defs');
+    if (!defs) {
+      defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+      svg.insertBefore(defs, svg.firstChild);
+    }
+    if (!svg.querySelector('#dangerHatch')) {
+      const pattern = document.createElementNS('http://www.w3.org/2000/svg', 'pattern');
+      pattern.setAttribute('id', 'dangerHatch');
+      pattern.setAttribute('patternUnits', 'userSpaceOnUse');
+      pattern.setAttribute('width', '8');
+      pattern.setAttribute('height', '8');
+      pattern.setAttribute('patternTransform', 'rotate(45)');
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', '0'); line.setAttribute('y1', '0');
+      line.setAttribute('x2', '0'); line.setAttribute('y2', '8');
+      line.setAttribute('stroke', '#d22');
+      line.setAttribute('stroke-width', '4');
+      line.setAttribute('opacity', '0.6');
+      pattern.appendChild(line);
+      defs.appendChild(pattern);
+    }
+  }
+
   // UI 표시 갱신: 개수에 따라 버튼/패널 제어
   function updateDangerUI() {
     if (dangerZones.length === 0) {
-      // 아무것도 없으면 버튼/패널 모두 숨김
       dangerToggle.style.display = "none";
       dangerListWrapper.style.display = "none";
     } else {
-      // 하나 이상이면 버튼은 보이되, 패널은 닫힌 상태 유지
       if (dangerListWrapper.style.display !== "block") {
         dangerToggle.style.display = "inline-block";
       }
@@ -325,7 +356,7 @@
   // 위험지역 설정 버튼
   document.getElementById("dangerZoneBtn").onclick = () => {
     if (!selectedLatLng) {
-      alert("먼저 마커를 지도에 찍어주세요.");
+      alert("먼저 지도에서 위치를 선택하세요.");
       return;
     }
     document.getElementById("dangerForm").style.display = "block";
@@ -345,7 +376,7 @@
     <button id="addDangerBtn">추가</button>
   `;
 
-  // 위험지역 추가 동작
+  // 위험지역 추가 동작 (빗금 채우기 적용)
   document.getElementById("dangerForm").addEventListener("click", e => {
     if (e.target.id !== "addDangerBtn") return;
     const name = document.getElementById("dangerName").value.trim();
@@ -355,13 +386,25 @@
     const lat = selectedLatLng.lat;
     const lng = selectedLatLng.lng;
 
+    ensureDangerHatchPattern();
+
     const circle = L.circle([lat, lng], {
       radius,
-      color: "red",
-      fillColor: "#f88",
-      fillOpacity: 0.4,
+      color: "#d22",
+      weight: 2,
+      fillColor: "#f88",   // 폴백 색상
+      fillOpacity: 1.0,    // 패턴이 보이도록 1로
       dashArray: "4,6"
-    }).addTo(map);
+    });
+
+    // 레이어 추가 전 'add' 이벤트에서 패턴 채우기 적용
+    circle.once('add', () => {
+      if (circle._path) {
+        circle._path.setAttribute('fill', 'url(#dangerHatch)');
+      }
+    });
+
+    circle.addTo(map);
 
     const zone = { name, lat, lng, radius, circle };
     dangerZones.push(zone);
@@ -389,7 +432,6 @@
     dangerOverlays.splice(index, 1);
     renderDangerList();
 
-    // 패널이 열려 있었고, 모두 삭제된 경우 패널 닫고 버튼도 숨김
     if (dangerZones.length === 0) {
       dangerListWrapper.style.display = "none";
       dangerToggle.style.display = "none";
@@ -423,15 +465,13 @@
 
   // 버튼으로 패널 열기
   dangerToggle.onclick = () => {
-    // 버튼 숨기고 패널 표시
     dangerToggle.style.display = "none";
     dangerListWrapper.style.display = "block";
   };
 
-  // X 버튼으로 패널 닫기 -> 버튼 복귀
+  // 닫기 버튼으로 패널 닫기 -> 버튼 복귀
   dangerClose.onclick = () => {
     dangerListWrapper.style.display = "none";
-    // 위험지역이 남아있을 때만 버튼 복귀
     if (dangerZones.length > 0) {
       dangerToggle.style.display = "inline-block";
     } else {
